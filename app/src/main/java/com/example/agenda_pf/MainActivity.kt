@@ -39,18 +39,22 @@ import androidx.compose.material.icons.filled.Delete
 import com.example.agenda_pf.data.database.DatabaseProvider
 import com.example.agenda_pf.viewmodel.NoteViewModelFactory
 import com.example.agenda_pf.viewmodel.TaskViewModelFactory
+import com.example.agenda_pf.data.repository.OfflineNoteRepository
+import com.example.agenda_pf.data.repository.OfflineTaskRepository
 
 // MainActivity
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        // Crear instancias de los repositorios
         val database = DatabaseProvider.getDatabase(applicationContext)
-        val noteDao = database.noteDao()
-        val taskDao = database.taskDao()
+        val noteRepository = OfflineNoteRepository(database.noteDao())
+        val taskRepository = OfflineTaskRepository(database.taskDao())
 
-        val noteViewModelFactory = NoteViewModelFactory(noteDao)
-        val taskViewModelFactory = TaskViewModelFactory(taskDao)
+        // Crear instancias de los ViewModelFactory con los repositorios
+        val noteViewModelFactory = NoteViewModelFactory(noteRepository)
+        val taskViewModelFactory = TaskViewModelFactory(taskRepository)
 
         setContent {
             Agenda_PFTheme {
@@ -66,15 +70,14 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+
 // Navigation
 @Composable
 fun Navigation(
     navController: NavHostController,
     noteViewModel: NoteViewModel,
     taskViewModel: TaskViewModel
-
-    ) {
-
+) {
     NavHost(navController, startDestination = "main") {
         composable("main") { MainScreen(navController) }
         composable("notesList") { NotesListScreen(noteViewModel, navController) }

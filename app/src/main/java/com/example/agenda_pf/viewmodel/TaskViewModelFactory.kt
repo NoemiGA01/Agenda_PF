@@ -1,14 +1,15 @@
 package com.example.agenda_pf.viewmodel
 
+
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
-import com.example.agenda_pf.data.dao.NoteDao
+import com.example.agenda_pf.data.repository.TaskRepository
 
-class NoteViewModelFactory (private val noteDao: NoteDao) : ViewModelProvider.Factory {
+class TaskViewModelFactory(private val repository: TaskRepository) : ViewModelProvider.Factory {
     override fun <T : ViewModel> create(modelClass: Class<T>): T {
-        if (modelClass.isAssignableFrom(NoteViewModel::class.java)) {
+        if (modelClass.isAssignableFrom(TaskViewModel::class.java)) {
             @Suppress("UNCHECKED_CAST")
-            return NoteViewModel(noteDao) as T
+            return TaskViewModel(repository) as T
         }
         throw IllegalArgumentException("Unknown ViewModel class")
     }

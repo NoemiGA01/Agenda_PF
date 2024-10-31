@@ -37,6 +37,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.res.stringResource
 import com.example.agenda_pf.data.database.DatabaseProvider
 import com.example.agenda_pf.viewmodel.NoteViewModelFactory
 import com.example.agenda_pf.viewmodel.TaskViewModelFactory
@@ -104,7 +105,7 @@ fun MainScreen(navController: NavHostController) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Agenda", fontWeight = FontWeight.Bold, fontSize = 24.sp) },
+                title = { Text(stringResource(R.string.agenda), fontWeight = FontWeight.Bold, fontSize = 24.sp) },
                 colors = TopAppBarDefaults.smallTopAppBarColors(
                     containerColor = Color(0xFFE1BEE7)
                 )
@@ -131,7 +132,7 @@ fun MainScreen(navController: NavHostController) {
                         .size(150.dp)
                         .clickable { navController.navigate("notesList") }
                 )
-                Text("Notas", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.notas), fontSize = 20.sp, fontWeight = FontWeight.Bold)
 
                 Spacer(modifier = Modifier.height(40.dp))
 
@@ -142,7 +143,7 @@ fun MainScreen(navController: NavHostController) {
                         .size(150.dp)
                         .clickable { navController.navigate("tasksList") }
                 )
-                Text("Tareas", fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                Text(stringResource(R.string.tareas), fontSize = 20.sp, fontWeight = FontWeight.Bold)
             }
         }
     )
@@ -151,8 +152,8 @@ fun MainScreen(navController: NavHostController) {
     if (showDialog) {
         AlertDialog(
             onDismissRequest = { showDialog = false },
-            title = { Text(text = "Agregar Nota o Tarea") },
-            text = { Text(text = "Selecciona una opción para agregar:") },
+            title = { Text(text = stringResource(R.string.agregar_nota_o_tarea)) },
+            text = { Text(text = stringResource(R.string.selecciona_una_opci_n_para_agregar)) },
             confirmButton = {
                 TextButton(
                     onClick = {
@@ -160,7 +161,7 @@ fun MainScreen(navController: NavHostController) {
                         navController.navigate("addNote") // Navega a la pantalla de agregar nota
                     }
                 ) {
-                    Text("Agregar Nota")
+                    Text(stringResource(R.string.agregar_nota))
                 }
             },
             dismissButton = {
@@ -170,7 +171,7 @@ fun MainScreen(navController: NavHostController) {
                         navController.navigate("addTask") // Navega a la pantalla de agregar tarea
                     }
                 ) {
-                    Text("Agregar Tarea")
+                    Text(stringResource(R.string.agregar_tarea))
                 }
             }
         )
@@ -188,18 +189,24 @@ fun AddNoteScreen(viewModel: NoteViewModel, navController: NavHostController) {
     Column(modifier = Modifier.padding(16.dp)) {
 
         Button(onClick = { navController.navigate("main") }) {
-            Text("Regresar")
+            Text(stringResource(R.string.regresar))
         }
 
-        TextField(value = title, onValueChange = { title = it }, placeholder = { Text("Título") })
-        TextField(value = description, onValueChange = { description = it }, placeholder = { Text("Descripción") })
+        TextField(value = title, onValueChange = { title = it }, placeholder = { Text(
+            stringResource(
+                R.string.t_tulo
+            )
+        ) })
+        TextField(value = description, onValueChange = { description = it }, placeholder = { Text(
+            stringResource(R.string.descripci_n)
+        ) })
 
         Button(onClick = {
             val note = Note(title = title.text, description = description.text)
             viewModel.addNote(note)
             navController.navigate("notesList")
         }) {
-            Text("Guardar Nota")
+            Text(stringResource(R.string.guardar_nota))
         }
     }
 }
@@ -213,18 +220,24 @@ fun AddTaskScreen(viewModel: TaskViewModel, navController: NavHostController) {
     Column(modifier = Modifier.padding(16.dp)) {
 
         Button(onClick = { navController.navigate("main") }) {
-            Text("Regresar")
+            Text(stringResource(R.string.regresar))
         }
 
-        TextField(value = title, onValueChange = { title = it }, placeholder = { Text("Título") })
-        TextField(value = description, onValueChange = { description = it }, placeholder = { Text("Descripción") })
+        TextField(value = title, onValueChange = { title = it }, placeholder = { Text(
+            stringResource(
+                R.string.t_tulo
+            )
+        ) })
+        TextField(value = description, onValueChange = { description = it }, placeholder = { Text(
+            stringResource(R.string.descripci_n)
+        ) })
 
         Button(onClick = {
             val task = Task(title = title.text, description = description.text, dueDate = System.currentTimeMillis())
             viewModel.addTask(task)
             navController.navigate("tasksList")
         }) {
-            Text("Guardar Tarea")
+            Text(stringResource(R.string.guardar_tarea))
         }
     }
 }
@@ -244,12 +257,12 @@ fun NotesListScreen(viewModel: NoteViewModel, navController: NavHostController) 
         topBar = {
             TopAppBar(
                 title = {
-                    Text("Lista de Notas")
+                    Text(stringResource(R.string.lista_de_notas))
                 },
                 colors = TopAppBarDefaults.smallTopAppBarColors(containerColor = Color(0xFFE1BEE7)),
                 navigationIcon = {
                     TextButton(onClick = { navController.navigate("main") }) {
-                        Text("Regresar", color = Color.White)
+                        Text(stringResource(R.string.lista_de_notas), color = Color.White)
                     }
                 }
             )
@@ -267,7 +280,7 @@ fun NotesListScreen(viewModel: NoteViewModel, navController: NavHostController) 
                 TextField(
                     value = searchText,
                     onValueChange = { searchText = it },
-                    placeholder = { Text("Buscar Notas") },
+                    placeholder = { Text(stringResource(R.string.buscar_notas)) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(8.dp)
@@ -280,7 +293,7 @@ fun NotesListScreen(viewModel: NoteViewModel, navController: NavHostController) 
                             .padding(8.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("No hay notas disponibles")
+                        Text(stringResource(R.string.no_hay_notas_disponibles))
                     }
                 } else {
                     LazyColumn {
@@ -347,11 +360,11 @@ fun TasksListScreen(viewModel: TaskViewModel, navController: NavHostController) 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Lista de Tareas") },
+                title = { Text(stringResource(R.string.lista_de_tareas)) },
                 colors = TopAppBarDefaults.smallTopAppBarColors(containerColor = Color(0xFFE1BEE7)),
                 navigationIcon = {
                     TextButton(onClick = { navController.navigate("main") }) {
-                        Text("Regresar", color = Color.White)
+                        Text(stringResource(R.string.regresar), color = Color.White)
                     }
                 }
             )
@@ -369,7 +382,7 @@ fun TasksListScreen(viewModel: TaskViewModel, navController: NavHostController) 
                 TextField(
                     value = searchText,
                     onValueChange = { searchText = it },
-                    placeholder = { Text("Buscar Tareas") },
+                    placeholder = { Text(stringResource(R.string.buscar_tareas)) },
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(8.dp)
@@ -382,7 +395,7 @@ fun TasksListScreen(viewModel: TaskViewModel, navController: NavHostController) 
                             .padding(8.dp),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text("No hay tareas disponibles")
+                        Text(stringResource(R.string.no_hay_tareas_disponibles))
                     }
                 } else {
                     LazyColumn {
@@ -455,8 +468,8 @@ fun EditNoteScreen(viewModel: NoteViewModel, navController: NavHostController, n
     }
 
     Column(modifier = Modifier.padding(16.dp)) {
-        TextField(value = title, onValueChange = { title = it }, placeholder = { Text("Título") })
-        TextField(value = description, onValueChange = { description = it }, placeholder = { Text("Descripción") })
+        TextField(value = title, onValueChange = { title = it }, placeholder = { Text(stringResource(R.string.t_tulo)) })
+        TextField(value = description, onValueChange = { description = it }, placeholder = { Text(stringResource(R.string.descripci_n)) })
 
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
             Button(onClick = {
@@ -465,12 +478,12 @@ fun EditNoteScreen(viewModel: NoteViewModel, navController: NavHostController, n
                 }
                 navController.navigate("notesList")
             }) {
-                Text("Guardar Cambios")
+                Text(stringResource(R.string.guardar_cambios))
             }
 
             // Botón de Cancelar
             OutlinedButton(onClick = { navController.navigate("notesList") }) {
-                Text("Cancelar")
+                Text(stringResource(R.string.cancelar))
             }
         }
     }
@@ -493,8 +506,8 @@ fun EditTaskScreen(viewModel: TaskViewModel, navController: NavHostController, t
     }
 
     Column(modifier = Modifier.padding(16.dp)) {
-        TextField(value = title, onValueChange = { title = it }, placeholder = { Text("Título") })
-        TextField(value = description, onValueChange = { description = it }, placeholder = { Text("Descripción") })
+        TextField(value = title, onValueChange = { title = it }, placeholder = { Text(stringResource(R.string.t_tulo)) })
+        TextField(value = description, onValueChange = { description = it }, placeholder = { Text(stringResource(R.string.descripci_n)) })
 
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
             Button(onClick = {
@@ -503,12 +516,12 @@ fun EditTaskScreen(viewModel: TaskViewModel, navController: NavHostController, t
                 }
                 navController.navigate("tasksList")
             }) {
-                Text("Guardar Cambios")
+                Text(stringResource(R.string.guardar_cambios))
             }
 
             // Botón de Cancelar
             OutlinedButton(onClick = { navController.navigate("tasksList") }) {
-                Text("Cancelar")
+                Text(stringResource(R.string.cancelar))
             }
         }
     }

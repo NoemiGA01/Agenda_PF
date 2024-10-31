@@ -5,6 +5,7 @@ plugins {
 }
 
 android {
+
     namespace = "com.example.agenda_pf"
     compileSdk = 34
 

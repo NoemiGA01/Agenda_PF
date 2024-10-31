@@ -6,6 +6,10 @@ import kotlinx.coroutines.flow.Flow
 
 @Dao
 interface TaskDao {
+
+    @Update
+    suspend fun updateTask(task: Task)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(task: Task): Long
 
@@ -22,6 +26,8 @@ interface TaskDao {
     // Método para obtener una tarea específica por ID
     @Query("SELECT * FROM tasks WHERE id = :taskId")
     fun getTaskById(taskId: Int): Flow<Task?>
+
+
 
 
 

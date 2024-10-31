@@ -9,5 +9,6 @@ data class Task(
     val title: String,
     val description: String,
     val dueDate: Long,
-    val reminderDate: Long? = null
+    val reminderDate: Long? = null,
+    val isCompleted: Boolean = false // Campo para marcar la tarea como completada
 )

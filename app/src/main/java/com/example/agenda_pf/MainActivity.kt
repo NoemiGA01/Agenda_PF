@@ -36,6 +36,7 @@ import kotlinx.coroutines.launch
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.ui.draw.alpha
 import com.example.agenda_pf.data.database.DatabaseProvider
 import com.example.agenda_pf.viewmodel.NoteViewModelFactory
 import com.example.agenda_pf.viewmodel.TaskViewModelFactory
@@ -185,6 +186,11 @@ fun AddNoteScreen(viewModel: NoteViewModel, navController: NavHostController) {
     var description by remember { mutableStateOf(TextFieldValue("")) }
 
     Column(modifier = Modifier.padding(16.dp)) {
+
+        Button(onClick = { navController.navigate("main") }) {
+            Text("Regresar")
+        }
+
         TextField(value = title, onValueChange = { title = it }, placeholder = { Text("Título") })
         TextField(value = description, onValueChange = { description = it }, placeholder = { Text("Descripción") })
 
@@ -205,6 +211,11 @@ fun AddTaskScreen(viewModel: TaskViewModel, navController: NavHostController) {
     var description by remember { mutableStateOf(TextFieldValue("")) }
 
     Column(modifier = Modifier.padding(16.dp)) {
+
+        Button(onClick = { navController.navigate("main") }) {
+            Text("Regresar")
+        }
+
         TextField(value = title, onValueChange = { title = it }, placeholder = { Text("Título") })
         TextField(value = description, onValueChange = { description = it }, placeholder = { Text("Descripción") })
 
@@ -287,6 +298,40 @@ fun NotesListScreen(viewModel: NoteViewModel, navController: NavHostController) 
     )
 }
 
+@Composable
+fun TaskItem(task: Task, onEdit: () -> Unit, onDelete: () -> Unit, onCompleteChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(8.dp)
+    ) {
+        // Checkbox para marcar como completada
+        Checkbox(
+            checked = task.isCompleted,
+            onCheckedChange = { isChecked ->
+                onCompleteChange(isChecked)
+            },
+            modifier = Modifier.padding(end = 8.dp)
+        )
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .alpha(if (task.isCompleted) 0.5f else 1f) // Reducir opacidad si está completada
+        ) {
+            Text(text = task.title, fontWeight = FontWeight.Bold)
+            Text(text = task.description)
+        }
+        IconButton(onClick = onEdit, enabled = !task.isCompleted) {
+            Icon(Icons.Filled.Edit, contentDescription = "Editar")
+        }
+        IconButton(onClick = onDelete, enabled = !task.isCompleted) {
+            Icon(Icons.Filled.Delete, contentDescription = "Eliminar")
+        }
+    }
+}
+
+
 
 // TasksListScreen
 @OptIn(ExperimentalMaterial3Api::class)
@@ -345,7 +390,10 @@ fun TasksListScreen(viewModel: TaskViewModel, navController: NavHostController) 
                             TaskItem(
                                 task,
                                 onEdit = { navController.navigate("editTask/${task.id}") },
-                                onDelete = { viewModel.deleteTask(task) }
+                                onDelete = { viewModel.deleteTask(task) },
+                                onCompleteChange = { isChecked ->
+                                    viewModel.updateTask(task.copy(isCompleted = isChecked))
+                                }
                             )
                         }
                     }
@@ -354,6 +402,7 @@ fun TasksListScreen(viewModel: TaskViewModel, navController: NavHostController) 
         }
     )
 }
+
 
 
 

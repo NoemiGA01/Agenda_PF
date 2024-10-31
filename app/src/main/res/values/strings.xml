@@ -1,5 +1,26 @@
 <resources>
-    <string name="app_name">Agenda_PF</string>
-    <string name="show_less">Show less</string>
-    <string name="show_more">Show more</string>
+    <string name="app_name">Agenda</string>
+    <string name="title_agenda">Agenda</string>
+    <string name="add">Agregar</string>
+    <string name="notes">Notas</string>
+    <string name="tasks">Tareas</string>
+    <string name="add_note_or_task">Agregar Nota o Tarea</string>
+    <string name="select_option_to_add">Selecciona una opción para agregar:</string>
+    <string name="add_note">Agregar Nota</string>
+    <string name="add_task">Agregar Tarea</string>
+    <string name="save_note">Guardar Nota</string>
+    <string name="title">Título</string>
+    <string name="description">Descripción</string>
+    <string name="save_task">Guardar Tarea</string>
+    <string name="notes_list">Lista de Notas</string>
+    <string name="back">Regresar</string>
+    <string name="search_notes">Buscar Notas</string>
+    <string name="no_notes">No hay notas disponibles</string>
+    <string name="tasks_list">Lista de Tareas</string>
+    <string name="search_tasks">Buscar Tareas</string>
+    <string name="no_tasks">No hay tareas disponibles</string>
+    <string name="edit">Editar</string>
+    <string name="delete">Eliminar</string>
+    <string name="save_changes">Guardar Cambios</string>
+    <string name="cancel">Cancelar</string>
 </resources>

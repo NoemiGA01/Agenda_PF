@@ -52,6 +52,12 @@ android {
 }
 
 dependencies {
+    // Biblioteca de permisos
+    implementation("com.google.accompanist:accompanist-permissions:0.30.1")
+
+    // ExoPlayer para reproducción de video y audio
+    implementation("com.google.android.exoplayer:exoplayer:2.15.1")
+
     // Dependencias esenciales de AndroidX y Jetpack Compose
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
@@ -97,6 +103,13 @@ dependencies {
     implementation("androidx.room:room-ktx:2.6.1")
 
     //Dependencias de Lifecycle para ViewModel en Compose
-    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.5.1")
-    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.5.1")
+    implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.6.1")
+    implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.1")
+
+
+
+
+
+
+
 }

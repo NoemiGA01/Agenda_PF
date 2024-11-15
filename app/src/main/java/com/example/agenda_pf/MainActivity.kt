@@ -1,5 +1,8 @@
 package com.example.agenda_pf
 
+
+import android.app.TimePickerDialog
+import android.content.Context
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -30,19 +33,23 @@ import com.example.agenda_pf.data.entities.Task
 import com.example.agenda_pf.ui.theme.Agenda_PFTheme
 import com.example.agenda_pf.viewmodel.NoteViewModel
 import com.example.agenda_pf.viewmodel.TaskViewModel
-import kotlinx.coroutines.launch
 
 // Import para los íconos en Material3
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import com.example.agenda_pf.R
 import com.example.agenda_pf.data.database.DatabaseProvider
 import com.example.agenda_pf.viewmodel.NoteViewModelFactory
 import com.example.agenda_pf.viewmodel.TaskViewModelFactory
 import com.example.agenda_pf.data.repository.OfflineNoteRepository
 import com.example.agenda_pf.data.repository.OfflineTaskRepository
+import java.text.SimpleDateFormat
+import java.util.Calendar
+import java.util.Locale
 
 // MainActivity
 class MainActivity : ComponentActivity() {
@@ -178,69 +185,241 @@ fun MainScreen(navController: NavHostController) {
     }
 }
 
-
-
-// AddNoteScreen
 @Composable
 fun AddNoteScreen(viewModel: NoteViewModel, navController: NavHostController) {
     var title by remember { mutableStateOf(TextFieldValue("")) }
     var description by remember { mutableStateOf(TextFieldValue("")) }
 
-    Column(modifier = Modifier.padding(16.dp)) {
-
-        Button(onClick = { navController.navigate("main") }) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        Button(onClick = { navController.navigate("main") }, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.regresar))
         }
 
-        TextField(value = title, onValueChange = { title = it }, placeholder = { Text(
-            stringResource(
-                R.string.t_tulo
-            )
-        ) })
-        TextField(value = description, onValueChange = { description = it }, placeholder = { Text(
-            stringResource(R.string.descripci_n)
-        ) })
+        TextField(
+            value = title,
+            onValueChange = { title = it },
+            placeholder = { Text(stringResource(R.string.t_tulo)) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp)
+        )
+        TextField(
+            value = description,
+            onValueChange = { description = it },
+            placeholder = { Text(stringResource(R.string.descripci_n)) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp)
+        )
 
-        Button(onClick = {
-            val note = Note(title = title.text, description = description.text)
-            viewModel.addNote(note)
-            navController.navigate("notesList")
-        }) {
+        // Nueva sección para íconos de multimedia
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            IconButton(onClick = { /* Acción para añadir foto */ }) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_foto),
+                    contentDescription = "Agregar Foto"
+                )
+            }
+            IconButton(onClick = { /* Acción para añadir video */ }) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_video),
+                    contentDescription = "Agregar Video"
+                )
+            }
+            IconButton(onClick = { /* Acción para añadir audio */ }) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_audio),
+                    contentDescription = "Agregar Audio"
+                )
+            }
+        }
+
+        Button(
+            onClick = {
+                val note = Note(title = title.text, description = description.text)
+                viewModel.addNote(note)
+                navController.navigate("notesList")
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp)
+        ) {
             Text(stringResource(R.string.guardar_nota))
         }
     }
 }
 
-// AddTaskScreen
 @Composable
 fun AddTaskScreen(viewModel: TaskViewModel, navController: NavHostController) {
     var title by remember { mutableStateOf(TextFieldValue("")) }
     var description by remember { mutableStateOf(TextFieldValue("")) }
+    var dueDate by remember { mutableStateOf("") } // Fecha seleccionada como texto
+    var showDatePicker by remember { mutableStateOf(false) } // Estado para el DatePicker
+    var showTimePicker by remember { mutableStateOf(false) } // Estado para el TimePicker
+    var selectedDate by remember { mutableStateOf("") } // Almacena la fecha seleccionada
+    val context = LocalContext.current
 
-    Column(modifier = Modifier.padding(16.dp)) {
-
-        Button(onClick = { navController.navigate("main") }) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        Button(onClick = { navController.navigate("main") }, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.regresar))
         }
 
-        TextField(value = title, onValueChange = { title = it }, placeholder = { Text(
-            stringResource(
-                R.string.t_tulo
-            )
-        ) })
-        TextField(value = description, onValueChange = { description = it }, placeholder = { Text(
-            stringResource(R.string.descripci_n)
-        ) })
+        TextField(
+            value = title,
+            onValueChange = { title = it },
+            placeholder = { Text(stringResource(R.string.t_tulo)) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp)
+        )
+        TextField(
+            value = description,
+            onValueChange = { description = it },
+            placeholder = { Text(stringResource(R.string.descripci_n)) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp)
+        )
 
-        Button(onClick = {
-            val task = Task(title = title.text, description = description.text, dueDate = System.currentTimeMillis())
-            viewModel.addTask(task)
-            navController.navigate("tasksList")
-        }) {
+        // Botón para seleccionar fecha y hora
+        Button(
+            onClick = { showDatePicker = true }, // Cambia el estado para mostrar el DatePicker
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp)
+        ) {
+            Text(text = if (dueDate.isEmpty()) "Seleccionar Fecha y Hora" else "Fecha: $dueDate")
+        }
+
+        // Mostrar el DatePickerDialog
+        if (showDatePicker) {
+            val calendar = Calendar.getInstance()
+            android.app.DatePickerDialog(
+                context,
+                { _, year, month, day ->
+                    selectedDate = "$day/${month + 1}/$year"
+                    showDatePicker = false
+                    showTimePicker = true // Muestra el TimePicker después de seleccionar la fecha
+                },
+                calendar.get(Calendar.YEAR),
+                calendar.get(Calendar.MONTH),
+                calendar.get(Calendar.DAY_OF_MONTH)
+            ).show()
+        }
+
+        // Mostrar el TimePickerDialog
+        if (showTimePicker) {
+            val calendar = Calendar.getInstance()
+            TimePickerDialog(
+                context,
+                { _, hour, minute ->
+                    dueDate = "$selectedDate $hour:$minute" // Combina la fecha y la hora
+                    showTimePicker = false
+                },
+                calendar.get(Calendar.HOUR_OF_DAY),
+                calendar.get(Calendar.MINUTE),
+                true
+            ).show()
+        }
+
+        // Sección de iconos multimedia
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            IconButton(onClick = { /* Acción para añadir foto */ }) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_foto),
+                    contentDescription = "Agregar Foto"
+                )
+            }
+            IconButton(onClick = { /* Acción para añadir video */ }) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_video),
+                    contentDescription = "Agregar Video"
+                )
+            }
+            IconButton(onClick = { /* Acción para añadir audio */ }) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_audio),
+                    contentDescription = "Agregar Audio"
+                )
+            }
+        }
+
+        Button(
+            onClick = {
+                // Convertir la fecha y hora seleccionada a un Long
+                val formatter = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
+                val date = formatter.parse(dueDate) // Convierte la fecha seleccionada a Date
+                val dueDateLong = date?.time ?: System.currentTimeMillis() // Convierte Date a Long
+
+                // Crear la tarea con dueDate como Long
+                val task = Task(
+                    title = title.text,
+                    description = description.text,
+                    dueDate = dueDateLong
+                )
+                viewModel.addTask(task)
+                navController.navigate("tasksList")
+            },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp)
+        ) {
             Text(stringResource(R.string.guardar_tarea))
         }
     }
 }
+
+
+// Función para mostrar el DatePicker
+@Composable
+fun showDatePicker(context: Context, onDateSelected: (String) -> Unit) {
+    val calendar = Calendar.getInstance()
+    val year = calendar.get(Calendar.YEAR)
+    val month = calendar.get(Calendar.MONTH)
+    val day = calendar.get(Calendar.DAY_OF_MONTH)
+
+    android.app.DatePickerDialog(
+        context,
+        { _, selectedYear, selectedMonth, selectedDay ->
+            onDateSelected("$selectedDay/${selectedMonth + 1}/$selectedYear")
+        },
+        year, month, day
+    ).show()
+}
+
+// Función para mostrar el TimePicker
+fun showTimePicker(context: Context, onTimeSelected: (String) -> Unit) {
+    val calendar = Calendar.getInstance()
+    val hour = calendar.get(Calendar.HOUR_OF_DAY)
+    val minute = calendar.get(Calendar.MINUTE)
+
+    TimePickerDialog(
+        context,
+        { _, selectedHour, selectedMinute ->
+            onTimeSelected("$selectedHour:$selectedMinute")
+        },
+        hour, minute, true
+    ).show()
+}
+
 
 // NotesListScreen
 @OptIn(ExperimentalMaterial3Api::class)
@@ -262,7 +441,7 @@ fun NotesListScreen(viewModel: NoteViewModel, navController: NavHostController) 
                 colors = TopAppBarDefaults.smallTopAppBarColors(containerColor = Color(0xFFE1BEE7)),
                 navigationIcon = {
                     TextButton(onClick = { navController.navigate("main") }) {
-                        Text(stringResource(R.string.lista_de_notas), color = Color.White)
+                        Text(stringResource(R.string.regresar), color = Color.White)
                     }
                 }
             )
@@ -311,38 +490,7 @@ fun NotesListScreen(viewModel: NoteViewModel, navController: NavHostController) 
     )
 }
 
-@Composable
-fun TaskItem(task: Task, onEdit: () -> Unit, onDelete: () -> Unit, onCompleteChange: (Boolean) -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(8.dp)
-    ) {
-        // Checkbox para marcar como completada
-        Checkbox(
-            checked = task.isCompleted,
-            onCheckedChange = { isChecked ->
-                onCompleteChange(isChecked)
-            },
-            modifier = Modifier.padding(end = 8.dp)
-        )
 
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .alpha(if (task.isCompleted) 0.5f else 1f) // Reducir opacidad si está completada
-        ) {
-            Text(text = task.title, fontWeight = FontWeight.Bold)
-            Text(text = task.description)
-        }
-        IconButton(onClick = onEdit, enabled = !task.isCompleted) {
-            Icon(Icons.Filled.Edit, contentDescription = "Editar")
-        }
-        IconButton(onClick = onDelete, enabled = !task.isCompleted) {
-            Icon(Icons.Filled.Delete, contentDescription = "Eliminar")
-        }
-    }
-}
 
 
 
@@ -437,23 +585,46 @@ fun NoteItem(note: Note, onEdit: () -> Unit, onDelete: () -> Unit) {
     }
 }
 
-// TaskItem
+
 @Composable
-fun TaskItem(task: Task, onEdit: () -> Unit, onDelete: () -> Unit) {
-    Row(modifier = Modifier
-        .fillMaxWidth()
-        .padding(8.dp)
+fun TaskItem(task: Task, onEdit: () -> Unit, onDelete: () -> Unit, onCompleteChange: (Boolean) -> Unit) {
+    val dateFormatter = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()) // Formato para mostrar la fecha
+    val formattedDate = dateFormatter.format(task.dueDate) // Convierte Long a String
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(8.dp)
     ) {
-        Column(modifier = Modifier.weight(1f)) {
+        // Checkbox para marcar como completada
+        Checkbox(
+            checked = task.isCompleted,
+            onCheckedChange = { isChecked ->
+                onCompleteChange(isChecked)
+            },
+            modifier = Modifier.padding(end = 8.dp)
+        )
+
+        Column(
+            modifier = Modifier
+                .weight(1f)
+                .alpha(if (task.isCompleted) 0.5f else 1f) // Reducir opacidad si está completada
+        ) {
             Text(text = task.title, fontWeight = FontWeight.Bold)
             Text(text = task.description)
+            Text(text = "Fecha: $formattedDate", fontSize = 12.sp, color = Color.Gray) // Muestra la fecha
         }
-        IconButton(onClick = onEdit) { Icon(Icons.Filled.Edit, contentDescription = "Editar") }
-        IconButton(onClick = onDelete) { Icon(Icons.Filled.Delete, contentDescription = "Eliminar") }
+        IconButton(onClick = onEdit, enabled = !task.isCompleted) {
+            Icon(Icons.Filled.Edit, contentDescription = "Editar")
+        }
+        IconButton(onClick = onDelete, enabled = !task.isCompleted) {
+            Icon(Icons.Filled.Delete, contentDescription = "Eliminar")
+        }
     }
 }
 
-// EditNoteScreen
+
+
 @Composable
 fun EditNoteScreen(viewModel: NoteViewModel, navController: NavHostController, noteId: Int) {
     val note by viewModel.getNoteById(noteId).collectAsState(initial = null)
@@ -467,60 +638,229 @@ fun EditNoteScreen(viewModel: NoteViewModel, navController: NavHostController, n
         }
     }
 
-    Column(modifier = Modifier.padding(16.dp)) {
-        TextField(value = title, onValueChange = { title = it }, placeholder = { Text(stringResource(R.string.t_tulo)) })
-        TextField(value = description, onValueChange = { description = it }, placeholder = { Text(stringResource(R.string.descripci_n)) })
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        TextField(
+            value = title,
+            onValueChange = { title = it },
+            placeholder = { Text(stringResource(R.string.t_tulo)) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp)
+        )
+        TextField(
+            value = description,
+            onValueChange = { description = it },
+            placeholder = { Text(stringResource(R.string.descripci_n)) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp)
+        )
 
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-            Button(onClick = {
-                note?.let {
-                    viewModel.updateNote(Note(id = it.id, title = title.text, description = description.text))
-                }
-                navController.navigate("notesList")
-            }) {
+        // Nueva sección para íconos de multimedia
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            IconButton(onClick = { /* Acción para añadir foto */ }) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_foto),
+                    contentDescription = "Agregar Foto"
+                )
+            }
+            IconButton(onClick = { /* Acción para añadir video */ }) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_video),
+                    contentDescription = "Agregar Video"
+                )
+            }
+            IconButton(onClick = { /* Acción para añadir audio */ }) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_audio),
+                    contentDescription = "Agregar Audio"
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            Button(
+                onClick = {
+                    note?.let {
+                        viewModel.updateNote(Note(id = it.id, title = title.text, description = description.text))
+                    }
+                    navController.navigate("notesList")
+                },
+                modifier = Modifier.padding(4.dp)
+            ) {
                 Text(stringResource(R.string.guardar_cambios))
             }
 
-            // Botón de Cancelar
-            OutlinedButton(onClick = { navController.navigate("notesList") }) {
+            OutlinedButton(
+                onClick = { navController.navigate("notesList") },
+                modifier = Modifier.padding(4.dp)
+            ) {
                 Text(stringResource(R.string.cancelar))
             }
         }
     }
 }
 
-
-
-// EditTaskScreen
+//Pantalla de editar tareas
 @Composable
 fun EditTaskScreen(viewModel: TaskViewModel, navController: NavHostController, taskId: Int) {
     val task by viewModel.getTaskById(taskId).collectAsState(initial = null)
     var title by remember { mutableStateOf(TextFieldValue("")) }
     var description by remember { mutableStateOf(TextFieldValue("")) }
+    var dueDate by remember { mutableStateOf("") } // Fecha seleccionada como texto
+    var showDatePicker by remember { mutableStateOf(false) } // Estado para el DatePicker
+    var showTimePicker by remember { mutableStateOf(false) } // Estado para el TimePicker
+    var selectedDate by remember { mutableStateOf("") } // Almacena la fecha seleccionada
+    val context = LocalContext.current
 
     LaunchedEffect(task) {
         task?.let {
             title = TextFieldValue(it.title)
             description = TextFieldValue(it.description)
+            val formatter = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
+            dueDate = formatter.format(it.dueDate) // Convierte Long a String
         }
     }
 
-    Column(modifier = Modifier.padding(16.dp)) {
-        TextField(value = title, onValueChange = { title = it }, placeholder = { Text(stringResource(R.string.t_tulo)) })
-        TextField(value = description, onValueChange = { description = it }, placeholder = { Text(stringResource(R.string.descripci_n)) })
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        TextField(
+            value = title,
+            onValueChange = { title = it },
+            placeholder = { Text(stringResource(R.string.t_tulo)) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp)
+        )
+        TextField(
+            value = description,
+            onValueChange = { description = it },
+            placeholder = { Text(stringResource(R.string.descripci_n)) },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp)
+        )
 
-        Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceEvenly) {
-            Button(onClick = {
-                task?.let {
-                    viewModel.updateTask(Task(id = it.id, title = title.text, description = description.text, dueDate = it.dueDate))
-                }
-                navController.navigate("tasksList")
-            }) {
+        // Botón para modificar la fecha y hora
+        Button(
+            onClick = { showDatePicker = true }, // Muestra el DatePicker al hacer clic
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp)
+        ) {
+            Text(text = if (dueDate.isEmpty()) "Modificar Fecha y Hora" else "Fecha: $dueDate")
+        }
+
+        // Mostrar el DatePickerDialog
+        if (showDatePicker) {
+            val calendar = Calendar.getInstance()
+            android.app.DatePickerDialog(
+                context,
+                { _, year, month, day ->
+                    selectedDate = "$day/${month + 1}/$year"
+                    showDatePicker = false
+                    showTimePicker = true // Mostrar el TimePicker después de seleccionar la fecha
+                },
+                calendar.get(Calendar.YEAR),
+                calendar.get(Calendar.MONTH),
+                calendar.get(Calendar.DAY_OF_MONTH)
+            ).show()
+        }
+
+        // Mostrar el TimePickerDialog
+        if (showTimePicker) {
+            val calendar = Calendar.getInstance()
+            TimePickerDialog(
+                context,
+                { _, hour, minute ->
+                    dueDate = "$selectedDate $hour:$minute" // Combina la fecha y la hora
+                    showTimePicker = false
+                },
+                calendar.get(Calendar.HOUR_OF_DAY),
+                calendar.get(Calendar.MINUTE),
+                true
+            ).show()
+        }
+
+        // Sección de iconos multimedia
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            IconButton(onClick = { /* Acción para añadir foto */ }) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_foto),
+                    contentDescription = "Agregar Foto"
+                )
+            }
+            IconButton(onClick = { /* Acción para añadir video */ }) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_video),
+                    contentDescription = "Agregar Video"
+                )
+            }
+            IconButton(onClick = { /* Acción para añadir audio */ }) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_audio),
+                    contentDescription = "Agregar Audio"
+                )
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            Button(
+                onClick = {
+                    task?.let {
+                        // Convertir la fecha seleccionada a Long
+                        val formatter = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
+                        val date = formatter.parse(dueDate)
+                        val dueDateLong = date?.time ?: it.dueDate // Usa la nueva fecha o la anterior
+
+                        viewModel.updateTask(
+                            Task(
+                                id = it.id,
+                                title = title.text,
+                                description = description.text,
+                                dueDate = dueDateLong, // Actualiza la fecha
+                                isCompleted = it.isCompleted
+                            )
+                        )
+                    }
+                    navController.navigate("tasksList")
+                },
+                modifier = Modifier.padding(4.dp)
+            ) {
                 Text(stringResource(R.string.guardar_cambios))
             }
 
-            // Botón de Cancelar
-            OutlinedButton(onClick = { navController.navigate("tasksList") }) {
+            OutlinedButton(
+                onClick = { navController.navigate("tasksList") },
+                modifier = Modifier.padding(4.dp)
+            ) {
                 Text(stringResource(R.string.cancelar))
             }
         }

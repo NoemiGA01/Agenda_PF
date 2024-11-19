@@ -10,5 +10,6 @@ data class Task(
     val description: String,
     val dueDate: Long,
     val reminderDate: Long? = null,
+    val multimedia: String = "", // Este campo permite almacenar una lista de URIs como JSON
     val isCompleted: Boolean = false // Campo para marcar la tarea como completada
 )

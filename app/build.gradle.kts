@@ -93,8 +93,21 @@ dependencies {
     implementation("androidx.window:window:1.1.0-beta01")
 
 
+    implementation ("androidx.compose.foundation:foundation:1.5.1")
+
+
+
+    implementation ("com.google.android.gms:play-services-location:21.0.1")
+    implementation ("com.google.android.gms:play-services-maps:18.1.0")
+
+
+
+    implementation ("io.coil-kt:coil-compose:2.2.2")
+
+
+
     // Biblioteca Coil para cargar imágenes en Compose
-    implementation("io.coil-kt:coil-compose:2.0.0")
+    implementation("io.coil-kt:coil-compose:2.3.0")
 
     // Room components
     implementation("androidx.room:room-runtime:2.6.1")
@@ -106,6 +119,8 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.6.1")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.6.1")
 
+
+    implementation ("androidx.activity:activity-compose:1.7.2")
 
 
 

@@ -13,7 +13,7 @@ import com.example.agenda_pf.data.dao.MultimediaDao
 
 @Database(
     entities = [Note::class, Task::class, Notification::class, Multimedia::class],
-    version = 1
+    version = 2
 )
 abstract class AppDatabase : RoomDatabase() {
     abstract fun noteDao(): NoteDao

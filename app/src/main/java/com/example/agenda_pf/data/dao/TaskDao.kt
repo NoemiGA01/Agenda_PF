@@ -26,9 +26,4 @@ interface TaskDao {
     // Método para obtener una tarea específica por ID
     @Query("SELECT * FROM tasks WHERE id = :taskId")
     fun getTaskById(taskId: Int): Flow<Task?>
-
-
-
-
-
 }

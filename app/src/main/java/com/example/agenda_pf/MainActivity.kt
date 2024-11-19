@@ -1,16 +1,30 @@
 package com.example.agenda_pf
 
 
+import android.app.Activity
 import android.app.TimePickerDialog
+import android.content.ContentValues
 import android.content.Context
+import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.media.MediaPlayer
+import android.media.MediaRecorder
+import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
+import android.provider.MediaStore
+import android.widget.Toast
+import android.widget.VideoView
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -39,14 +53,23 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.compose.ui.window.Dialog
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+import androidx.core.content.FileProvider
+import coil.compose.AsyncImage
 import com.example.agenda_pf.R
 import com.example.agenda_pf.data.database.DatabaseProvider
 import com.example.agenda_pf.viewmodel.NoteViewModelFactory
 import com.example.agenda_pf.viewmodel.TaskViewModelFactory
 import com.example.agenda_pf.data.repository.OfflineNoteRepository
 import com.example.agenda_pf.data.repository.OfflineTaskRepository
+import java.io.File
+import java.io.FileOutputStream
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
@@ -262,33 +285,84 @@ fun AddNoteScreen(viewModel: NoteViewModel, navController: NavHostController) {
 fun AddTaskScreen(viewModel: TaskViewModel, navController: NavHostController) {
     var title by remember { mutableStateOf(TextFieldValue("")) }
     var description by remember { mutableStateOf(TextFieldValue("")) }
-    var dueDate by remember { mutableStateOf("") } // Fecha seleccionada como texto
-    var showDatePicker by remember { mutableStateOf(false) } // Estado para el DatePicker
-    var showTimePicker by remember { mutableStateOf(false) } // Estado para el TimePicker
-    var selectedDate by remember { mutableStateOf("") } // Almacena la fecha seleccionada
+    var dueDate by remember { mutableStateOf("") }
+    var imageUris by remember { mutableStateOf(listOf<Uri>()) }
+    var videoUris by remember { mutableStateOf(listOf<Uri>()) }
+    val audioUris = remember { mutableStateListOf<Uri>() }
+    var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var selectedVideoUri by remember { mutableStateOf<Uri?>(null) }
+    var selectedAudioUri by remember { mutableStateOf<Uri?>(null) }
+    var isRecording by remember { mutableStateOf(false) }
+
     val context = LocalContext.current
+    val mediaRecorder = remember { MediaRecorder() }
+    val mediaPlayer = remember { MediaPlayer() }
+    val tempAudioFile = remember { mutableStateOf<File?>(null) }
+
+    val tempImageUri = remember { mutableStateOf<Uri?>(null) }
+    val tempVideoUri = remember { mutableStateOf<Uri?>(null) }
+
+    val launcherTakePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+        if (success && tempImageUri.value != null) {
+            tempImageUri.value?.let {
+                imageUris = imageUris + it
+            }
+        }
+    }
+
+    val launcherSelectPictures = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+        if (!uris.isNullOrEmpty()) {
+            imageUris = imageUris + uris
+        }
+    }
+
+    val launcherCaptureVideo = rememberLauncherForActivityResult(ActivityResultContracts.CaptureVideo()) { success ->
+        if (success) {
+            tempVideoUri.value?.let { uri ->
+                if (!videoUris.contains(uri)) {
+                    videoUris = videoUris + uri
+                }
+            }
+            tempVideoUri.value = null // Restablece la URI temporal después de capturar el video
+        }
+    }
+
+    val launcherSelectVideos = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+        if (!uris.isNullOrEmpty()) {
+            videoUris = videoUris + uris
+        }
+    }
+
+    val launcherSelectAudios = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+        if (!uris.isNullOrEmpty()) {
+            audioUris.addAll(uris)
+        }
+    }
+
+    var showDatePicker by remember { mutableStateOf(false) }
+    var selectedDate by remember { mutableStateOf("") }
+    var showTimePicker by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .padding(16.dp)
     ) {
-        Button(onClick = { navController.navigate("main") }, modifier = Modifier.fillMaxWidth()) {
-            Text(stringResource(R.string.regresar))
-        }
-
+        // Campo de título
         TextField(
             value = title,
             onValueChange = { title = it },
-            placeholder = { Text(stringResource(R.string.t_tulo)) },
+            placeholder = { Text("Título") },
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(8.dp)
         )
+
+        // Campo de descripción
         TextField(
             value = description,
             onValueChange = { description = it },
-            placeholder = { Text(stringResource(R.string.descripci_n)) },
+            placeholder = { Text("Descripción") },
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(8.dp)
@@ -296,15 +370,14 @@ fun AddTaskScreen(viewModel: TaskViewModel, navController: NavHostController) {
 
         // Botón para seleccionar fecha y hora
         Button(
-            onClick = { showDatePicker = true }, // Cambia el estado para mostrar el DatePicker
+            onClick = { showDatePicker = true },
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(8.dp)
         ) {
-            Text(text = if (dueDate.isEmpty()) "Seleccionar Fecha y Hora" else "Fecha: $dueDate")
+            Text(if (dueDate.isEmpty()) "Seleccionar Fecha y Hora" else "Fecha: $dueDate")
         }
 
-        // Mostrar el DatePickerDialog
         if (showDatePicker) {
             val calendar = Calendar.getInstance()
             android.app.DatePickerDialog(
@@ -312,7 +385,7 @@ fun AddTaskScreen(viewModel: TaskViewModel, navController: NavHostController) {
                 { _, year, month, day ->
                     selectedDate = "$day/${month + 1}/$year"
                     showDatePicker = false
-                    showTimePicker = true // Muestra el TimePicker después de seleccionar la fecha
+                    showTimePicker = true
                 },
                 calendar.get(Calendar.YEAR),
                 calendar.get(Calendar.MONTH),
@@ -320,13 +393,12 @@ fun AddTaskScreen(viewModel: TaskViewModel, navController: NavHostController) {
             ).show()
         }
 
-        // Mostrar el TimePickerDialog
         if (showTimePicker) {
             val calendar = Calendar.getInstance()
             TimePickerDialog(
                 context,
                 { _, hour, minute ->
-                    dueDate = "$selectedDate $hour:$minute" // Combina la fecha y la hora
+                    dueDate = "$selectedDate $hour:$minute"
                     showTimePicker = false
                 },
                 calendar.get(Calendar.HOUR_OF_DAY),
@@ -335,45 +407,156 @@ fun AddTaskScreen(viewModel: TaskViewModel, navController: NavHostController) {
             ).show()
         }
 
-        // Sección de iconos multimedia
+        // Sección de íconos multimedia
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(8.dp),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            IconButton(onClick = { /* Acción para añadir foto */ }) {
+            IconButton(onClick = {
+                val uri = createTempImageUri(context)
+                tempImageUri.value = uri
+                launcherTakePicture.launch(uri)
+            }) {
                 Icon(
                     painter = painterResource(id = R.drawable.ic_foto),
-                    contentDescription = "Agregar Foto"
+                    contentDescription = "Tomar Foto"
                 )
             }
-            IconButton(onClick = { /* Acción para añadir video */ }) {
+
+            IconButton(onClick = { launcherSelectPictures.launch("image/*") }) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_gallery),
+                    contentDescription = "Seleccionar Fotos"
+                )
+            }
+
+            IconButton(onClick = {
+                val uri = createTempVideoUri(context)
+                tempVideoUri.value = uri
+                launcherCaptureVideo.launch(uri)
+            }) {
                 Icon(
                     painter = painterResource(id = R.drawable.ic_video),
-                    contentDescription = "Agregar Video"
+                    contentDescription = "Capturar Video"
                 )
             }
-            IconButton(onClick = { /* Acción para añadir audio */ }) {
+
+            IconButton(onClick = { launcherSelectVideos.launch("video/*") }) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_video2),
+                    contentDescription = "Seleccionar Videos"
+                )
+            }
+
+            IconButton(onClick = {
+                if (isRecording) {
+                    stopRecording(mediaRecorder, tempAudioFile, audioUris, context)
+                    isRecording = false
+                } else {
+                    startRecording(mediaRecorder, tempAudioFile, context)
+                    isRecording = true
+                }
+            }) {
                 Icon(
                     painter = painterResource(id = R.drawable.ic_audio),
-                    contentDescription = "Agregar Audio"
+                    contentDescription = if (isRecording) "Detener Grabación" else "Grabar Audio",
+                    tint = if (isRecording) Color.Red else Color.Black
                 )
             }
         }
 
+        // Visualización de multimedia
+        LazyRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp)
+        ) {
+            items(imageUris) { uri ->
+                AsyncImage(
+                    model = uri,
+                    contentDescription = "Imagen seleccionada",
+                    modifier = Modifier
+                        .size(60.dp)
+                        .clickable { selectedImageUri = uri },
+                    contentScale = ContentScale.Crop
+                )
+            }
+
+            items(videoUris) { uri ->
+                Box(
+                    modifier = Modifier
+                        .size(60.dp)
+                        .clickable { selectedVideoUri = uri }
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_video),
+                        contentDescription = "Video seleccionado",
+                        modifier = Modifier.align(Alignment.Center)
+                    )
+                }
+            }
+
+            items(audioUris) { uri ->
+                Box(
+                    modifier = Modifier
+                        .size(60.dp)
+                        .clickable {
+                            playAudio(mediaPlayer, uri, context) // Llama a la función para reproducir el audio
+                        }
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_audio),
+                        contentDescription = "Audio seleccionado",
+                        modifier = Modifier.align(Alignment.Center)
+                    )
+                }
+            }
+
+        }
+
+        // Mostrar imagen seleccionada en grande
+        if (selectedImageUri != null) {
+            Dialog(onDismissRequest = { selectedImageUri = null }) {
+                AsyncImage(
+                    model = selectedImageUri,
+                    contentDescription = "Imagen ampliada",
+                    modifier = Modifier.fillMaxSize(),
+                    contentScale = ContentScale.Fit
+                )
+            }
+        }
+
+        // Reproducción de video seleccionado
+        if (selectedVideoUri != null) {
+            Dialog(onDismissRequest = { selectedVideoUri = null }) {
+                AndroidView(
+                    factory = { context ->
+                        VideoView(context).apply {
+                            setVideoURI(selectedVideoUri)
+                            setOnPreparedListener { it.start() }
+                        }
+                    },
+                    modifier = Modifier.fillMaxSize()
+                )
+            }
+        }
+
+        // Botón para guardar tarea
         Button(
             onClick = {
-                // Convertir la fecha y hora seleccionada a un Long
                 val formatter = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
-                val date = formatter.parse(dueDate) // Convierte la fecha seleccionada a Date
-                val dueDateLong = date?.time ?: System.currentTimeMillis() // Convierte Date a Long
+                val date = formatter.parse(dueDate)
+                val dueDateLong = date?.time ?: System.currentTimeMillis()
 
-                // Crear la tarea con dueDate como Long
                 val task = Task(
                     title = title.text,
                     description = description.text,
-                    dueDate = dueDateLong
+                    dueDate = dueDateLong,
+                    multimedia = imageUris.joinToString(",") { it.toString() } + "|" +
+                            videoUris.joinToString(",") { it.toString() } + "|" +
+                            audioUris.joinToString(",") { it.toString() }
                 )
                 viewModel.addTask(task)
                 navController.navigate("tasksList")
@@ -382,11 +565,142 @@ fun AddTaskScreen(viewModel: TaskViewModel, navController: NavHostController) {
                 .fillMaxWidth()
                 .padding(8.dp)
         ) {
-            Text(stringResource(R.string.guardar_tarea))
+            Text("Guardar Tarea")
         }
     }
 }
 
+
+//Solicitar permisos
+fun checkAndRequestPermissions(context: Context): Boolean {
+    val permissions = arrayOf(
+        android.Manifest.permission.RECORD_AUDIO,
+        android.Manifest.permission.WRITE_EXTERNAL_STORAGE
+    )
+    val missingPermissions = permissions.filter {
+        ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
+    }
+    if (missingPermissions.isNotEmpty()) {
+        ActivityCompat.requestPermissions(
+            context as Activity,
+            missingPermissions.toTypedArray(),
+            100 // Código de solicitud
+        )
+        return false
+    }
+    return true
+}
+
+
+//Inicar la grabacion de audio
+fun startRecording(mediaRecorder: MediaRecorder, tempAudioFile: MutableState<File?>, context: Context) {
+    if (!checkAndRequestPermissions(context)) {
+        Toast.makeText(context, "Permisos necesarios no concedidos", Toast.LENGTH_SHORT).show()
+        return
+    }
+
+    try {
+        val audioFile = createTempAudioFile(context) // Crea un archivo temporal
+        tempAudioFile.value = audioFile
+        mediaRecorder.apply {
+            setAudioSource(MediaRecorder.AudioSource.MIC) // Fuente de audio
+            setOutputFormat(MediaRecorder.OutputFormat.THREE_GPP) // Formato de salida
+            setAudioEncoder(MediaRecorder.AudioEncoder.AMR_NB) // Codificador
+            setOutputFile(audioFile.absolutePath) // Archivo de salida
+            prepare() // Prepara el MediaRecorder
+            start() // Comienza la grabación
+        }
+        Toast.makeText(context, "Grabación iniciada", Toast.LENGTH_SHORT).show()
+    } catch (e: Exception) {
+        e.printStackTrace()
+        Toast.makeText(context, "Error al iniciar grabación: ${e.message}", Toast.LENGTH_SHORT).show()
+    }
+}
+
+
+// Detener grabación
+fun stopRecording
+            (mediaRecorder: MediaRecorder,
+             tempAudioFile: MutableState<File?>,
+             audioUris: MutableList<Uri>,
+             context: Context) {
+    try {
+        mediaRecorder.apply {
+            stop() // Detiene la grabación
+            reset() // Resetea el MediaRecorder para su próximo uso
+        }
+        tempAudioFile.value?.let { file ->
+            val uri = Uri.fromFile(file) // Convierte el archivo en un URI
+            if (!audioUris.contains(uri)) { // Verifica que no se dupliquen URIs
+                audioUris.add(uri) // Agrega el URI a la lista de audios
+            }
+        }
+        Toast.makeText(context, "Grabación guardada", Toast.LENGTH_SHORT).show()
+    } catch (e: Exception) {
+        e.printStackTrace()
+        Toast.makeText(context, "Error al detener grabación", Toast.LENGTH_SHORT).show()
+    }
+}
+
+// Reproducir audio
+fun playAudio(mediaPlayer: MediaPlayer, uri: Uri, context: Context) {
+    try {
+        mediaPlayer.apply {
+            reset() // Resetea el MediaPlayer para su próximo uso
+            setDataSource(context, uri) // Configura la fuente de audio con el URI
+            prepare() // Prepara el MediaPlayer
+            start() // Inicia la reproducción
+        }
+        Toast.makeText(context, "Reproduciendo audio", Toast.LENGTH_SHORT).show()
+    } catch (e: Exception) {
+        e.printStackTrace()
+        Toast.makeText(context, "Error al reproducir el audio", Toast.LENGTH_SHORT).show()
+    }
+}
+
+fun createTempAudioFile(context: Context): File {
+    val storageDir = context.getExternalFilesDir(Environment.DIRECTORY_MUSIC)
+    if (storageDir != null && !storageDir.exists()) {
+        storageDir.mkdirs() // Crea el directorio si no existe
+    }
+    return File(storageDir, "temp_audio_${System.currentTimeMillis()}.3gp")
+}
+
+
+// Función para crear un archivo temporal donde guardar la imagen tomada por la cámara
+fun createTempImageUri(context: Context): Uri {
+    val contentValues = ContentValues().apply {
+        put(MediaStore.Images.Media.DISPLAY_NAME, "temp_image_${System.currentTimeMillis()}.jpg")
+        put(MediaStore.Images.Media.MIME_TYPE, "image/jpeg")
+    }
+    return context.contentResolver.insert(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, contentValues)
+        ?: throw IllegalStateException("No se pudo crear el URI de imagen")
+}
+
+
+// Función para crear un archivo temporal para video
+fun createTempVideoUri(context: Context): Uri {
+    val contentValues = ContentValues().apply {
+        put(MediaStore.Video.Media.DISPLAY_NAME, "temp_video_${System.currentTimeMillis()}.mp4")
+        put(MediaStore.Video.Media.MIME_TYPE, "video/mp4")
+    }
+    return context.contentResolver.insert(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, contentValues)
+        ?: throw IllegalStateException("No se pudo crear el URI de video")
+}
+
+
+
+
+
+fun saveImageToGallery(context: Context, bitmap: Bitmap): Uri {
+    val filename = "${System.currentTimeMillis()}.jpg"
+    val imagesDir = context.getExternalFilesDir(Environment.DIRECTORY_PICTURES)
+    val file = File(imagesDir, filename)
+    val fos = FileOutputStream(file)
+    bitmap.compress(Bitmap.CompressFormat.JPEG, 100, fos)
+    fos.close()
+    return FileProvider.getUriForFile(context, "${context.packageName}.provider", file)
+}
 
 // Función para mostrar el DatePicker
 @Composable
@@ -721,18 +1035,89 @@ fun EditTaskScreen(viewModel: TaskViewModel, navController: NavHostController, t
     val task by viewModel.getTaskById(taskId).collectAsState(initial = null)
     var title by remember { mutableStateOf(TextFieldValue("")) }
     var description by remember { mutableStateOf(TextFieldValue("")) }
-    var dueDate by remember { mutableStateOf("") } // Fecha seleccionada como texto
-    var showDatePicker by remember { mutableStateOf(false) } // Estado para el DatePicker
-    var showTimePicker by remember { mutableStateOf(false) } // Estado para el TimePicker
-    var selectedDate by remember { mutableStateOf("") } // Almacena la fecha seleccionada
-    val context = LocalContext.current
+    var dueDate by remember { mutableStateOf("") }
+    var imageUris by remember { mutableStateOf(listOf<Uri>()) }
+    var videoUris by remember { mutableStateOf(listOf<Uri>()) }
+    val audioUris = remember { mutableStateListOf<Uri>() }
+    var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
+    var selectedVideoUri by remember { mutableStateOf<Uri?>(null) }
+    var selectedAudioUri by remember { mutableStateOf<Uri?>(null) }
 
+
+    var isRecording by remember { mutableStateOf(false) }
+
+    val context = LocalContext.current
+    val mediaRecorder = remember { MediaRecorder() }
+    val mediaPlayer = remember { MediaPlayer() }
+
+    // URI temporal para capturar imágenes, videos y audios
+    val tempImageUri = remember { mutableStateOf<Uri?>(null) }
+    val tempVideoUri = remember { mutableStateOf<Uri?>(null) }
+    val tempAudioFile = remember { mutableStateOf<File?>(null) }
+
+    // Lanzadores para tomar fotos, grabar videos y seleccionar multimedia desde la galería
+    val launcherTakePicture =
+        rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { success ->
+            if (success && tempImageUri.value != null) {
+                tempImageUri.value?.let {
+                    imageUris = imageUris + it
+                }
+            }
+        }
+
+    val launcherSelectPictures =
+        rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+            if (!uris.isNullOrEmpty()) {
+                imageUris = imageUris + uris
+            }
+        }
+
+    val launcherCaptureVideo =
+        rememberLauncherForActivityResult(ActivityResultContracts.CaptureVideo()) { success ->
+            if (success && tempVideoUri.value != null) {
+                tempVideoUri.value?.let {
+                    videoUris = videoUris + it
+                }
+            }
+        }
+
+    val launcherSelectVideos =
+        rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+            if (!uris.isNullOrEmpty()) {
+                videoUris = videoUris + uris
+            }
+        }
+
+
+    val launcherSelectAudios =
+        rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+            if (!uris.isNullOrEmpty()) {
+                audioUris.addAll(uris)
+            }
+        }
+
+    // Cargar datos de la tarea seleccionada
     LaunchedEffect(task) {
         task?.let {
             title = TextFieldValue(it.title)
             description = TextFieldValue(it.description)
             val formatter = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
-            dueDate = formatter.format(it.dueDate) // Convierte Long a String
+            dueDate = formatter.format(it.dueDate)
+
+            val multimediaParts = it.multimedia.split("|")
+            imageUris = multimediaParts.getOrNull(0)?.split(",")?.mapNotNull { uriString ->
+                uriString.trim().takeIf { it.isNotEmpty() }?.let { Uri.parse(it) }
+            } ?: emptyList()
+            videoUris = multimediaParts.getOrNull(1)?.split(",")?.mapNotNull { uriString ->
+                uriString.trim().takeIf { it.isNotEmpty() }?.let { Uri.parse(it) }
+            } ?: emptyList()
+
+            audioUris.clear()
+            audioUris.addAll(
+                multimediaParts.getOrNull(2)?.split(",")?.mapNotNull { uri ->
+                    uri.trim().takeIf { it.isNotEmpty() }?.let { Uri.parse(it) }
+                } ?: emptyList()
+            )
         }
     }
 
@@ -741,18 +1126,21 @@ fun EditTaskScreen(viewModel: TaskViewModel, navController: NavHostController, t
             .fillMaxSize()
             .padding(16.dp)
     ) {
+        // Campo de título
         TextField(
             value = title,
             onValueChange = { title = it },
-            placeholder = { Text(stringResource(R.string.t_tulo)) },
+            placeholder = { Text("Título") },
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(8.dp)
         )
+
+        // Campo de descripción
         TextField(
             value = description,
             onValueChange = { description = it },
-            placeholder = { Text(stringResource(R.string.descripci_n)) },
+            placeholder = { Text("Descripción") },
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(8.dp)
@@ -760,72 +1148,145 @@ fun EditTaskScreen(viewModel: TaskViewModel, navController: NavHostController, t
 
         // Botón para modificar la fecha y hora
         Button(
-            onClick = { showDatePicker = true }, // Muestra el DatePicker al hacer clic
+            onClick = { /* Mostrar DatePicker y TimePicker */ },
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(8.dp)
         ) {
-            Text(text = if (dueDate.isEmpty()) "Modificar Fecha y Hora" else "Fecha: $dueDate")
+            Text(if (dueDate.isEmpty()) "Modificar Fecha y Hora" else "Fecha: $dueDate")
         }
-
-        // Mostrar el DatePickerDialog
-        if (showDatePicker) {
-            val calendar = Calendar.getInstance()
-            android.app.DatePickerDialog(
-                context,
-                { _, year, month, day ->
-                    selectedDate = "$day/${month + 1}/$year"
-                    showDatePicker = false
-                    showTimePicker = true // Mostrar el TimePicker después de seleccionar la fecha
-                },
-                calendar.get(Calendar.YEAR),
-                calendar.get(Calendar.MONTH),
-                calendar.get(Calendar.DAY_OF_MONTH)
-            ).show()
-        }
-
-        // Mostrar el TimePickerDialog
-        if (showTimePicker) {
-            val calendar = Calendar.getInstance()
-            TimePickerDialog(
-                context,
-                { _, hour, minute ->
-                    dueDate = "$selectedDate $hour:$minute" // Combina la fecha y la hora
-                    showTimePicker = false
-                },
-                calendar.get(Calendar.HOUR_OF_DAY),
-                calendar.get(Calendar.MINUTE),
-                true
-            ).show()
-        }
-
-        // Sección de iconos multimedia
+        // Sección de multimedia
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(8.dp),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            IconButton(onClick = { /* Acción para añadir foto */ }) {
+            // Icono para tomar foto
+            IconButton(onClick = {
+                val uri = createTempImageUri(context)
+                tempImageUri.value = uri
+                launcherTakePicture.launch(uri)
+            }) {
                 Icon(
                     painter = painterResource(id = R.drawable.ic_foto),
-                    contentDescription = "Agregar Foto"
+                    contentDescription = "Tomar Foto"
                 )
             }
-            IconButton(onClick = { /* Acción para añadir video */ }) {
+
+            // Icono para seleccionar fotos desde la galería
+            IconButton(onClick = { launcherSelectPictures.launch("image/*") }) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_gallery),
+                    contentDescription = "Seleccionar Imágenes"
+                )
+            }
+
+            // Icono para capturar video
+            IconButton(onClick = {
+                val uri = createTempVideoUri(context)
+                tempVideoUri.value = uri
+                launcherCaptureVideo.launch(uri)
+            }) {
                 Icon(
                     painter = painterResource(id = R.drawable.ic_video),
-                    contentDescription = "Agregar Video"
+                    contentDescription = "Grabar Video"
                 )
             }
-            IconButton(onClick = { /* Acción para añadir audio */ }) {
+
+            // Icono para seleccionar videos desde la galería
+            IconButton(onClick = { launcherSelectVideos.launch("video/*") }) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_video2),
+                    contentDescription = "Seleccionar Videos"
+                )
+            }
+
+            // Icono para grabar audio
+            IconButton(onClick = {
+                if (isRecording) {
+                    stopRecording(mediaRecorder, tempAudioFile, audioUris, context)
+                    isRecording = false
+                } else {
+                    startRecording(mediaRecorder, tempAudioFile, context)
+                    isRecording = true
+                }
+            }) {
                 Icon(
                     painter = painterResource(id = R.drawable.ic_audio),
-                    contentDescription = "Agregar Audio"
+                    contentDescription = if (isRecording) "Detener Grabación" else "Grabar Audio",
+                    tint = if (isRecording) Color.Red else Color.Black
                 )
             }
         }
 
+        // Mostrar audios seleccionados
+        LazyRow(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp)
+        ) {
+            items(audioUris) { uri ->
+                Box(
+                    modifier = Modifier
+                        .size(60.dp)
+                        .clickable { playAudio(mediaPlayer, uri, context) }
+                ) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_audio),
+                        contentDescription = "Audio seleccionado",
+                        modifier = Modifier.align(Alignment.Center)
+                    )
+                }
+            }
+        }
+
+
+        // Mostrar imagen seleccionada en grande
+        if (selectedImageUri != null) {
+            Dialog(onDismissRequest = { selectedImageUri = null }) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.8f))
+                        .clickable { selectedImageUri = null }
+                ) {
+                    AsyncImage(
+                        model = selectedImageUri,
+                        contentDescription = "Imagen en grande",
+                        modifier = Modifier
+                            .align(Alignment.Center)
+                            .padding(16.dp)
+                            .fillMaxWidth(),
+                        contentScale = ContentScale.Fit
+                    )
+                }
+            }
+        }
+
+        // Reproducir video seleccionado
+        if (selectedVideoUri != null) {
+            Dialog(onDismissRequest = { selectedVideoUri = null }) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.8f))
+                        .clickable { selectedVideoUri = null }
+                ) {
+                    AndroidView(
+                        factory = {
+                            VideoView(it).apply {
+                                setVideoURI(selectedVideoUri)
+                                setOnPreparedListener { it.start() }
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+        }
+
+        // Botones de guardar y cancelar
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -835,17 +1296,19 @@ fun EditTaskScreen(viewModel: TaskViewModel, navController: NavHostController, t
             Button(
                 onClick = {
                     task?.let {
-                        // Convertir la fecha seleccionada a Long
                         val formatter = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
                         val date = formatter.parse(dueDate)
-                        val dueDateLong = date?.time ?: it.dueDate // Usa la nueva fecha o la anterior
+                        val dueDateLong = date?.time ?: it.dueDate
 
                         viewModel.updateTask(
                             Task(
                                 id = it.id,
                                 title = title.text,
                                 description = description.text,
-                                dueDate = dueDateLong, // Actualiza la fecha
+                                dueDate = dueDateLong,
+                                multimedia = imageUris.joinToString(",") { it.toString() } +
+                                        "|" +
+                                        videoUris.joinToString(",") { it.toString() },
                                 isCompleted = it.isCompleted
                             )
                         )
@@ -866,7 +1329,6 @@ fun EditTaskScreen(viewModel: TaskViewModel, navController: NavHostController, t
         }
     }
 }
-
 
 
 @Preview(showBackground = true)

@@ -4,4 +4,6 @@
     <external-path name="external_files" path="." />
     <external-files-path name="videos" path="Videos/" />
     <external-files-path name="images" path="Images/" />
+    <files-path name="videos" path="." />
+
 </paths>

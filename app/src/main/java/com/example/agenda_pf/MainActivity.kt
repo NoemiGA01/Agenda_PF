@@ -60,7 +60,9 @@ import androidx.core.content.ContextCompat
 import java.io.File
 import coil.compose.rememberAsyncImagePainter
 import android.Manifest
-
+import android.widget.VideoView
+import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.content.FileProvider
 
 
 // MainActivity
@@ -233,18 +235,52 @@ fun saveBitmapToFile(context: Context, bitmap: Bitmap): File? {
 fun AddNoteScreen(viewModel: NoteViewModel, navController: NavHostController) {
     var title by remember { mutableStateOf(TextFieldValue("")) }
     var description by remember { mutableStateOf(TextFieldValue("")) }
-    var images by remember { mutableStateOf(listOf<File>()) }
-    var showDialog by remember { mutableStateOf(false) }
+    var mediaFiles by remember { mutableStateOf(listOf<File>()) }
+    var showImageDialog by remember { mutableStateOf(false) }
+    var showVideoDialog by remember { mutableStateOf(false) }
 
     val context = LocalContext.current
 
     // Lanzador para seleccionar imágenes desde la galería
-    val galleryLauncher = rememberLauncherForActivityResult(
+    val imageGalleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let {
             val file = uriToFile(context, it)
-            file?.let { images = images + it }
+            file?.let { mediaFiles = mediaFiles + it }
+        }
+    }
+
+    // Lanzador para tomar fotos con la cámara
+    val imageCameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicturePreview()
+    ) { bitmap ->
+        bitmap?.let {
+            val file = saveBitmapToFile(context, it)
+            file?.let { mediaFiles = mediaFiles + it }
+        }
+    }
+
+    // Lanzador para seleccionar videos desde la galería
+    val videoGalleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            val file = uriToFile(context, it)
+            file?.let { mediaFiles = mediaFiles + it }
+        }
+    }
+
+    // Lanzador para grabar videos con la cámara
+    val videoCameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CaptureVideo()
+    ) { isSuccess: Boolean ->
+        if (isSuccess) {
+            val videoFile = File(context.filesDir, "video_${System.currentTimeMillis()}.mp4")
+            mediaFiles = mediaFiles + videoFile
+            Toast.makeText(context, "Video guardado en: ${videoFile.absolutePath}", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(context, "No se grabó ningún video", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -253,21 +289,9 @@ fun AddNoteScreen(viewModel: NoteViewModel, navController: NavHostController) {
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
-            galleryLauncher.launch("image/*")
+            videoGalleryLauncher.launch("video/*")
         } else {
             Toast.makeText(context, "Permiso de almacenamiento denegado", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    // Lanzador para tomar fotos con la cámara
-    val cameraLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.TakePicturePreview()
-    ) { bitmap ->
-        if (bitmap != null) {
-            val file = saveBitmapToFile(context, bitmap)
-            file?.let { images = images + it }
-        } else {
-            Toast.makeText(context, "No se tomó ninguna foto", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -276,7 +300,13 @@ fun AddNoteScreen(viewModel: NoteViewModel, navController: NavHostController) {
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         if (isGranted) {
-            cameraLauncher.launch(null)
+            val tempVideoFile = File(context.filesDir, "video_${System.currentTimeMillis()}.mp4")
+            val videoUri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.provider",
+                tempVideoFile
+            )
+            videoCameraLauncher.launch(videoUri)
         } else {
             Toast.makeText(context, "Permiso de cámara denegado", Toast.LENGTH_SHORT).show()
         }
@@ -308,37 +338,55 @@ fun AddNoteScreen(viewModel: NoteViewModel, navController: NavHostController) {
                 .padding(8.dp)
         )
 
-        // Botón para agregar imágenes
+        // Botones para agregar imágenes y videos
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(8.dp),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            IconButton(onClick = { showDialog = true }) {
+            IconButton(onClick = { showImageDialog = true }) {
                 Icon(
                     painter = painterResource(id = R.drawable.ic_foto),
                     contentDescription = "Agregar Foto"
                 )
             }
+            IconButton(onClick = { showVideoDialog = true }) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_video),
+                    contentDescription = "Agregar Video"
+                )
+            }
         }
 
-        // Mostrar la lista de imágenes seleccionadas
+        // Mostrar lista de archivos multimedia
         LazyColumn {
-            items(images) { image ->
+            items(mediaFiles) { file ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Image(
-                        painter = rememberAsyncImagePainter(image),
-                        contentDescription = "Vista previa de imagen",
-                        modifier = Modifier.size(100.dp)
-                    )
-                    IconButton(onClick = { images = images - image }) {
-                        Icon(Icons.Filled.Delete, contentDescription = "Eliminar Imagen")
+                    if (file.extension == "mp4") {
+                        AndroidView(
+                            factory = { context ->
+                                VideoView(context).apply {
+                                    setVideoPath(file.absolutePath)
+                                    start()
+                                }
+                            },
+                            modifier = Modifier.size(150.dp)
+                        )
+                    } else {
+                        Image(
+                            painter = rememberAsyncImagePainter(file),
+                            contentDescription = "Vista previa",
+                            modifier = Modifier.size(100.dp)
+                        )
+                    }
+                    IconButton(onClick = { mediaFiles = mediaFiles - file }) {
+                        Icon(Icons.Filled.Delete, contentDescription = "Eliminar Archivo")
                     }
                 }
             }
@@ -346,13 +394,17 @@ fun AddNoteScreen(viewModel: NoteViewModel, navController: NavHostController) {
 
         Button(
             onClick = {
-                val note = Note(
-                    title = title.text,
-                    description = description.text,
-                    multimedia = images.joinToString(separator = ",") { "\"${it.absolutePath}\"" }
-                )
-                viewModel.addNote(note)
-                navController.navigate("notesList")
+                try {
+                    val note = Note(
+                        title = title.text,
+                        description = description.text,
+                        multimedia = mediaFiles.joinToString(separator = ",") { "\"${it.absolutePath}\"" }
+                    )
+                    viewModel.addNote(note)
+                    navController.navigate("notesList")
+                } catch (e: Exception) {
+                    Toast.makeText(context, "Error al guardar la nota: ${e.message}", Toast.LENGTH_SHORT).show()
+                }
             },
             modifier = Modifier
                 .fillMaxWidth()
@@ -361,48 +413,60 @@ fun AddNoteScreen(viewModel: NoteViewModel, navController: NavHostController) {
             Text("Guardar Nota")
         }
 
-        // Cuadro de diálogo para elegir entre tomar una foto o seleccionar una imagen
-        if (showDialog) {
+        // Cuadro de diálogo para agregar imágenes
+        if (showImageDialog) {
             AlertDialog(
-                onDismissRequest = { showDialog = false },
+                onDismissRequest = { showImageDialog = false },
                 title = { Text("Agregar Imagen") },
                 text = { Text("Elige una opción:") },
                 confirmButton = {
                     TextButton(onClick = {
-                        if (ContextCompat.checkSelfPermission(
-                                context,
-                                Manifest.permission.CAMERA
-                            ) == PackageManager.PERMISSION_GRANTED
-                        ) {
-                            cameraLauncher.launch(null)
-                        } else {
-                            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
-                        }
-                        showDialog = false
+                        imageCameraLauncher.launch(null)
+                        showImageDialog = false
                     }) {
                         Text("Tomar Foto")
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = {
-                        if (ContextCompat.checkSelfPermission(
-                                context,
-                                Manifest.permission.READ_EXTERNAL_STORAGE
-                            ) == PackageManager.PERMISSION_GRANTED
-                        ) {
-                            galleryLauncher.launch("image/*")
-                        } else {
-                            storagePermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
-                        }
-                        showDialog = false
+                        imageGalleryLauncher.launch("image/*")
+                        showImageDialog = false
                     }) {
                         Text("Subir Imagen")
                     }
                 }
             )
         }
+
+        // Cuadro de diálogo para agregar videos
+        if (showVideoDialog) {
+            AlertDialog(
+                onDismissRequest = { showVideoDialog = false },
+                title = { Text("Agregar Video") },
+                text = { Text("Elige una opción:") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                        showVideoDialog = false
+                    }) {
+                        Text("Grabar Video")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        storagePermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+                        showVideoDialog = false
+                    }) {
+                        Text("Subir Video")
+                    }
+                }
+            )
+        }
     }
 }
+
+
+
 
 
 
@@ -542,26 +606,68 @@ fun EditNoteScreen(viewModel: NoteViewModel, navController: NavHostController, n
     val note by viewModel.getNoteById(noteId).collectAsState(initial = null)
     var title by remember { mutableStateOf(TextFieldValue("")) }
     var description by remember { mutableStateOf(TextFieldValue("")) }
-    var images by remember { mutableStateOf(listOf<File>()) }
-    var showDialog by remember { mutableStateOf(false) }
-
+    var mediaFiles by remember { mutableStateOf(listOf<File>()) }
+    var showImageDialog by remember { mutableStateOf(false) }
+    var showVideoDialog by remember { mutableStateOf(false) }
     val context = LocalContext.current
 
-    val galleryLauncher = rememberLauncherForActivityResult(
+    // Lanzador para seleccionar imágenes desde la galería
+    val imageGalleryLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
         uri?.let {
             val file = uriToFile(context, it)
-            file?.let { images = images + it }
+            file?.let { mediaFiles = mediaFiles + it }
         }
     }
 
-    val cameraLauncher = rememberLauncherForActivityResult(
+    // Lanzador para tomar fotos con la cámara
+    val imageCameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicturePreview()
     ) { bitmap ->
         bitmap?.let {
             val file = saveBitmapToFile(context, it)
-            file?.let { images = images + it }
+            file?.let { mediaFiles = mediaFiles + it }
+        }
+    }
+
+    // Lanzador para seleccionar videos desde la galería
+    val videoGalleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            val file = uriToFile(context, it)
+            file?.let { mediaFiles = mediaFiles + it }
+        }
+    }
+
+    // Lanzador para grabar videos con la cámara
+    val videoCameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CaptureVideo()
+    ) { isSuccess: Boolean ->
+        if (isSuccess) {
+            val videoFile = File(context.filesDir, "video_${System.currentTimeMillis()}.mp4")
+            mediaFiles = mediaFiles + videoFile
+            Toast.makeText(context, "Video guardado en: ${videoFile.absolutePath}", Toast.LENGTH_SHORT).show()
+        } else {
+            Toast.makeText(context, "No se grabó ningún video", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Lanzador para manejar permisos de cámara
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            val tempVideoFile = File(context.filesDir, "video_${System.currentTimeMillis()}.mp4")
+            val videoUri = FileProvider.getUriForFile(
+                context,
+                "${context.packageName}.provider",
+                tempVideoFile
+            )
+            videoCameraLauncher.launch(videoUri)
+        } else {
+            Toast.makeText(context, "Permiso de cámara denegado", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -569,7 +675,7 @@ fun EditNoteScreen(viewModel: NoteViewModel, navController: NavHostController, n
         note?.let {
             title = TextFieldValue(it.title)
             description = TextFieldValue(it.description)
-            images = it.multimedia
+            mediaFiles = it.multimedia
                 .removeSurrounding("[", "]")
                 .split(",")
                 .map { path -> File(path.trim('"')) }
@@ -598,35 +704,54 @@ fun EditNoteScreen(viewModel: NoteViewModel, navController: NavHostController, n
                 .padding(8.dp)
         )
 
+        // Botones para agregar imágenes, videos y audios
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(8.dp),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            IconButton(onClick = { showDialog = true }) {
+            IconButton(onClick = { showImageDialog = true }) {
                 Icon(
                     painter = painterResource(id = R.drawable.ic_foto),
                     contentDescription = "Agregar Foto"
                 )
             }
+            IconButton(onClick = { showVideoDialog = true }) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_video),
+                    contentDescription = "Agregar Video"
+                )
+            }
         }
 
         LazyColumn {
-            items(images) { image ->
+            items(mediaFiles) { file ->
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(8.dp),
                     horizontalArrangement = Arrangement.SpaceBetween
                 ) {
-                    Image(
-                        painter = rememberAsyncImagePainter(image),
-                        contentDescription = "Vista previa de imagen",
-                        modifier = Modifier.size(100.dp)
-                    )
-                    IconButton(onClick = { images = images - image }) {
-                        Icon(Icons.Filled.Delete, contentDescription = "Eliminar Imagen")
+                    if (file.extension == "mp4") {
+                        AndroidView(
+                            factory = { context ->
+                                VideoView(context).apply {
+                                    setVideoPath(file.absolutePath)
+                                    start()
+                                }
+                            },
+                            modifier = Modifier.size(150.dp)
+                        )
+                    } else {
+                        Image(
+                            painter = rememberAsyncImagePainter(file),
+                            contentDescription = "Vista previa",
+                            modifier = Modifier.size(100.dp)
+                        )
+                    }
+                    IconButton(onClick = { mediaFiles = mediaFiles - file }) {
+                        Icon(Icons.Filled.Delete, contentDescription = "Eliminar Archivo")
                     }
                 }
             }
@@ -646,7 +771,7 @@ fun EditNoteScreen(viewModel: NoteViewModel, navController: NavHostController, n
                                 id = it.id,
                                 title = title.text,
                                 description = description.text,
-                                multimedia = images.joinToString(separator = ",") { "\"${it.absolutePath}\"" }
+                                multimedia = mediaFiles.joinToString(separator = ",") { "\"${it.absolutePath}\"" }
                             )
                         )
                     }
@@ -665,31 +790,61 @@ fun EditNoteScreen(viewModel: NoteViewModel, navController: NavHostController, n
             }
         }
 
-        if (showDialog) {
+        // Cuadro de diálogo para agregar imágenes
+        if (showImageDialog) {
             AlertDialog(
-                onDismissRequest = { showDialog = false },
+                onDismissRequest = { showImageDialog = false },
                 title = { Text("Agregar Imagen") },
                 text = { Text("Elige una opción:") },
                 confirmButton = {
                     TextButton(onClick = {
-                        cameraLauncher.launch(null)
-                        showDialog = false
+                        imageCameraLauncher.launch(null)
+                        showImageDialog = false
                     }) {
                         Text("Tomar Foto")
                     }
                 },
                 dismissButton = {
                     TextButton(onClick = {
-                        galleryLauncher.launch("image/*")
-                        showDialog = false
+                        imageGalleryLauncher.launch("image/*")
+                        showImageDialog = false
                     }) {
                         Text("Subir Imagen")
                     }
                 }
             )
         }
+
+        // Cuadro de diálogo para agregar videos
+        if (showVideoDialog) {
+            AlertDialog(
+                onDismissRequest = { showVideoDialog = false },
+                title = { Text("Agregar Video") },
+                text = { Text("Elige una opción:") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                        showVideoDialog = false
+                    }) {
+                        Text("Grabar Video")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        videoGalleryLauncher.launch("video/*")
+                        showVideoDialog = false
+                    }) {
+                        Text("Subir Video")
+                    }
+                }
+            )
+        }
     }
 }
+
+
+
+
 
 
 

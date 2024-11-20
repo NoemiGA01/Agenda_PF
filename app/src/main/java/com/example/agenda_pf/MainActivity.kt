@@ -248,6 +248,17 @@ fun AddNoteScreen(viewModel: NoteViewModel, navController: NavHostController) {
         }
     }
 
+    // Lanzador para manejar permisos de almacenamiento
+    val storagePermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            galleryLauncher.launch("image/*")
+        } else {
+            Toast.makeText(context, "Permiso de almacenamiento denegado", Toast.LENGTH_SHORT).show()
+        }
+    }
+
     // Lanzador para tomar fotos con la cámara
     val cameraLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.TakePicturePreview()
@@ -358,8 +369,10 @@ fun AddNoteScreen(viewModel: NoteViewModel, navController: NavHostController) {
                 text = { Text("Elige una opción:") },
                 confirmButton = {
                     TextButton(onClick = {
-                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
-                            == PackageManager.PERMISSION_GRANTED
+                        if (ContextCompat.checkSelfPermission(
+                                context,
+                                Manifest.permission.CAMERA
+                            ) == PackageManager.PERMISSION_GRANTED
                         ) {
                             cameraLauncher.launch(null)
                         } else {
@@ -372,7 +385,15 @@ fun AddNoteScreen(viewModel: NoteViewModel, navController: NavHostController) {
                 },
                 dismissButton = {
                     TextButton(onClick = {
-                        galleryLauncher.launch("image/*")
+                        if (ContextCompat.checkSelfPermission(
+                                context,
+                                Manifest.permission.READ_EXTERNAL_STORAGE
+                            ) == PackageManager.PERMISSION_GRANTED
+                        ) {
+                            galleryLauncher.launch("image/*")
+                        } else {
+                            storagePermissionLauncher.launch(Manifest.permission.READ_EXTERNAL_STORAGE)
+                        }
                         showDialog = false
                     }) {
                         Text("Subir Imagen")
@@ -382,6 +403,7 @@ fun AddNoteScreen(viewModel: NoteViewModel, navController: NavHostController) {
         }
     }
 }
+
 
 
 

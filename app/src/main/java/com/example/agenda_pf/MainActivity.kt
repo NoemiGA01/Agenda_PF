@@ -3,6 +3,7 @@ package com.example.agenda_pf
 
 import android.app.TimePickerDialog
 import android.content.Context
+import android.content.pm.PackageManager
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -50,6 +51,17 @@ import com.example.agenda_pf.data.repository.OfflineTaskRepository
 import java.text.SimpleDateFormat
 import java.util.Calendar
 import java.util.Locale
+import android.graphics.Bitmap
+import android.net.Uri
+import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.content.ContextCompat
+import java.io.File
+import coil.compose.rememberAsyncImagePainter
+import android.Manifest
+
+
 
 // MainActivity
 class MainActivity : ComponentActivity() {
@@ -185,10 +197,79 @@ fun MainScreen(navController: NavHostController) {
     }
 }
 
+fun uriToFile(context: Context, uri: Uri): File? {
+    val contentResolver = context.contentResolver
+    val fileName = System.currentTimeMillis().toString() + ".jpg" // Nombre único para el archivo
+    val file = File(context.cacheDir, fileName)
+
+    return try {
+        contentResolver.openInputStream(uri)?.use { inputStream ->
+            file.outputStream().use { outputStream ->
+                inputStream.copyTo(outputStream)
+            }
+        }
+        file
+    } catch (e: Exception) {
+        e.printStackTrace()
+        null
+    }
+}
+
+fun saveBitmapToFile(context: Context, bitmap: Bitmap): File? {
+    val fileName = System.currentTimeMillis().toString() + ".jpg"
+    val file = File(context.cacheDir, fileName)
+    return try {
+        file.outputStream().use { outputStream ->
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 100, outputStream)
+        }
+        file
+    } catch (e: Exception) {
+        e.printStackTrace()
+        null
+    }
+}
+
 @Composable
 fun AddNoteScreen(viewModel: NoteViewModel, navController: NavHostController) {
     var title by remember { mutableStateOf(TextFieldValue("")) }
     var description by remember { mutableStateOf(TextFieldValue("")) }
+    var images by remember { mutableStateOf(listOf<File>()) }
+    var showDialog by remember { mutableStateOf(false) }
+
+    val context = LocalContext.current
+
+    // Lanzador para seleccionar imágenes desde la galería
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            val file = uriToFile(context, it)
+            file?.let { images = images + it }
+        }
+    }
+
+    // Lanzador para tomar fotos con la cámara
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicturePreview()
+    ) { bitmap ->
+        if (bitmap != null) {
+            val file = saveBitmapToFile(context, bitmap)
+            file?.let { images = images + it }
+        } else {
+            Toast.makeText(context, "No se tomó ninguna foto", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    // Lanzador para manejar permisos de cámara
+    val cameraPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.RequestPermission()
+    ) { isGranted ->
+        if (isGranted) {
+            cameraLauncher.launch(null)
+        } else {
+            Toast.makeText(context, "Permiso de cámara denegado", Toast.LENGTH_SHORT).show()
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -196,13 +277,13 @@ fun AddNoteScreen(viewModel: NoteViewModel, navController: NavHostController) {
             .padding(16.dp)
     ) {
         Button(onClick = { navController.navigate("main") }, modifier = Modifier.fillMaxWidth()) {
-            Text(stringResource(R.string.regresar))
+            Text("Regresar")
         }
 
         TextField(
             value = title,
             onValueChange = { title = it },
-            placeholder = { Text(stringResource(R.string.t_tulo)) },
+            placeholder = { Text("Título") },
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(8.dp)
@@ -210,42 +291,55 @@ fun AddNoteScreen(viewModel: NoteViewModel, navController: NavHostController) {
         TextField(
             value = description,
             onValueChange = { description = it },
-            placeholder = { Text(stringResource(R.string.descripci_n)) },
+            placeholder = { Text("Descripción") },
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(8.dp)
         )
 
-        // Nueva sección para íconos de multimedia
+        // Botón para agregar imágenes
         Row(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(8.dp),
             horizontalArrangement = Arrangement.SpaceEvenly
         ) {
-            IconButton(onClick = { /* Acción para añadir foto */ }) {
+            IconButton(onClick = { showDialog = true }) {
                 Icon(
                     painter = painterResource(id = R.drawable.ic_foto),
                     contentDescription = "Agregar Foto"
                 )
             }
-            IconButton(onClick = { /* Acción para añadir video */ }) {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_video),
-                    contentDescription = "Agregar Video"
-                )
-            }
-            IconButton(onClick = { /* Acción para añadir audio */ }) {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_audio),
-                    contentDescription = "Agregar Audio"
-                )
+        }
+
+        // Mostrar la lista de imágenes seleccionadas
+        LazyColumn {
+            items(images) { image ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Image(
+                        painter = rememberAsyncImagePainter(image),
+                        contentDescription = "Vista previa de imagen",
+                        modifier = Modifier.size(100.dp)
+                    )
+                    IconButton(onClick = { images = images - image }) {
+                        Icon(Icons.Filled.Delete, contentDescription = "Eliminar Imagen")
+                    }
+                }
             }
         }
 
         Button(
             onClick = {
-                val note = Note(title = title.text, description = description.text)
+                val note = Note(
+                    title = title.text,
+                    description = description.text,
+                    multimedia = images.joinToString(separator = ",") { "\"${it.absolutePath}\"" }
+                )
                 viewModel.addNote(note)
                 navController.navigate("notesList")
             },
@@ -253,10 +347,44 @@ fun AddNoteScreen(viewModel: NoteViewModel, navController: NavHostController) {
                 .fillMaxWidth()
                 .padding(8.dp)
         ) {
-            Text(stringResource(R.string.guardar_nota))
+            Text("Guardar Nota")
+        }
+
+        // Cuadro de diálogo para elegir entre tomar una foto o seleccionar una imagen
+        if (showDialog) {
+            AlertDialog(
+                onDismissRequest = { showDialog = false },
+                title = { Text("Agregar Imagen") },
+                text = { Text("Elige una opción:") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        if (ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA)
+                            == PackageManager.PERMISSION_GRANTED
+                        ) {
+                            cameraLauncher.launch(null)
+                        } else {
+                            cameraPermissionLauncher.launch(Manifest.permission.CAMERA)
+                        }
+                        showDialog = false
+                    }) {
+                        Text("Tomar Foto")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        galleryLauncher.launch("image/*")
+                        showDialog = false
+                    }) {
+                        Text("Subir Imagen")
+                    }
+                }
+            )
         }
     }
 }
+
+
+
 
 @Composable
 fun AddTaskScreen(viewModel: TaskViewModel, navController: NavHostController) {
@@ -386,6 +514,162 @@ fun AddTaskScreen(viewModel: TaskViewModel, navController: NavHostController) {
         }
     }
 }
+
+@Composable
+fun EditNoteScreen(viewModel: NoteViewModel, navController: NavHostController, noteId: Int) {
+    val note by viewModel.getNoteById(noteId).collectAsState(initial = null)
+    var title by remember { mutableStateOf(TextFieldValue("")) }
+    var description by remember { mutableStateOf(TextFieldValue("")) }
+    var images by remember { mutableStateOf(listOf<File>()) }
+    var showDialog by remember { mutableStateOf(false) }
+
+    val context = LocalContext.current
+
+    val galleryLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        uri?.let {
+            val file = uriToFile(context, it)
+            file?.let { images = images + it }
+        }
+    }
+
+    val cameraLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.TakePicturePreview()
+    ) { bitmap ->
+        bitmap?.let {
+            val file = saveBitmapToFile(context, it)
+            file?.let { images = images + it }
+        }
+    }
+
+    LaunchedEffect(note) {
+        note?.let {
+            title = TextFieldValue(it.title)
+            description = TextFieldValue(it.description)
+            images = it.multimedia
+                .removeSurrounding("[", "]")
+                .split(",")
+                .map { path -> File(path.trim('"')) }
+        }
+    }
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp)
+    ) {
+        TextField(
+            value = title,
+            onValueChange = { title = it },
+            placeholder = { Text("Título") },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp)
+        )
+        TextField(
+            value = description,
+            onValueChange = { description = it },
+            placeholder = { Text("Descripción") },
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp)
+        )
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            IconButton(onClick = { showDialog = true }) {
+                Icon(
+                    painter = painterResource(id = R.drawable.ic_foto),
+                    contentDescription = "Agregar Foto"
+                )
+            }
+        }
+
+        LazyColumn {
+            items(images) { image ->
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Image(
+                        painter = rememberAsyncImagePainter(image),
+                        contentDescription = "Vista previa de imagen",
+                        modifier = Modifier.size(100.dp)
+                    )
+                    IconButton(onClick = { images = images - image }) {
+                        Icon(Icons.Filled.Delete, contentDescription = "Eliminar Imagen")
+                    }
+                }
+            }
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly
+        ) {
+            Button(
+                onClick = {
+                    note?.let {
+                        viewModel.updateNote(
+                            Note(
+                                id = it.id,
+                                title = title.text,
+                                description = description.text,
+                                multimedia = images.joinToString(separator = ",") { "\"${it.absolutePath}\"" }
+                            )
+                        )
+                    }
+                    navController.navigate("notesList")
+                },
+                modifier = Modifier.padding(4.dp)
+            ) {
+                Text("Guardar Cambios")
+            }
+
+            OutlinedButton(
+                onClick = { navController.navigate("notesList") },
+                modifier = Modifier.padding(4.dp)
+            ) {
+                Text("Cancelar")
+            }
+        }
+
+        if (showDialog) {
+            AlertDialog(
+                onDismissRequest = { showDialog = false },
+                title = { Text("Agregar Imagen") },
+                text = { Text("Elige una opción:") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        cameraLauncher.launch(null)
+                        showDialog = false
+                    }) {
+                        Text("Tomar Foto")
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = {
+                        galleryLauncher.launch("image/*")
+                        showDialog = false
+                    }) {
+                        Text("Subir Imagen")
+                    }
+                }
+            )
+        }
+    }
+}
+
+
 
 
 // Función para mostrar el DatePicker
@@ -625,95 +909,7 @@ fun TaskItem(task: Task, onEdit: () -> Unit, onDelete: () -> Unit, onCompleteCha
 
 
 
-@Composable
-fun EditNoteScreen(viewModel: NoteViewModel, navController: NavHostController, noteId: Int) {
-    val note by viewModel.getNoteById(noteId).collectAsState(initial = null)
-    var title by remember { mutableStateOf(TextFieldValue("")) }
-    var description by remember { mutableStateOf(TextFieldValue("")) }
 
-    LaunchedEffect(note) {
-        note?.let {
-            title = TextFieldValue(it.title)
-            description = TextFieldValue(it.description)
-        }
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp)
-    ) {
-        TextField(
-            value = title,
-            onValueChange = { title = it },
-            placeholder = { Text(stringResource(R.string.t_tulo)) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(8.dp)
-        )
-        TextField(
-            value = description,
-            onValueChange = { description = it },
-            placeholder = { Text(stringResource(R.string.descripci_n)) },
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(8.dp)
-        )
-
-        // Nueva sección para íconos de multimedia
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(8.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            IconButton(onClick = { /* Acción para añadir foto */ }) {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_foto),
-                    contentDescription = "Agregar Foto"
-                )
-            }
-            IconButton(onClick = { /* Acción para añadir video */ }) {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_video),
-                    contentDescription = "Agregar Video"
-                )
-            }
-            IconButton(onClick = { /* Acción para añadir audio */ }) {
-                Icon(
-                    painter = painterResource(id = R.drawable.ic_audio),
-                    contentDescription = "Agregar Audio"
-                )
-            }
-        }
-
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(8.dp),
-            horizontalArrangement = Arrangement.SpaceEvenly
-        ) {
-            Button(
-                onClick = {
-                    note?.let {
-                        viewModel.updateNote(Note(id = it.id, title = title.text, description = description.text))
-                    }
-                    navController.navigate("notesList")
-                },
-                modifier = Modifier.padding(4.dp)
-            ) {
-                Text(stringResource(R.string.guardar_cambios))
-            }
-
-            OutlinedButton(
-                onClick = { navController.navigate("notesList") },
-                modifier = Modifier.padding(4.dp)
-            ) {
-                Text(stringResource(R.string.cancelar))
-            }
-        }
-    }
-}
 
 //Pantalla de editar tareas
 @Composable
@@ -869,11 +1065,3 @@ fun EditTaskScreen(viewModel: TaskViewModel, navController: NavHostController, t
 
 
 
-@Preview(showBackground = true)
-@Composable
-fun MainScreenPreview() {
-    val navController = rememberNavController()
-    Agenda_PFTheme {
-        MainScreen(navController)
-    }
-}

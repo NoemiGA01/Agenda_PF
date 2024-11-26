@@ -77,6 +77,12 @@ import java.util.Calendar
 import java.util.Locale
 import androidx.compose.ui.window.Dialog as Dialog
 import android.Manifest
+import android.app.AlarmManager
+import android.app.NotificationChannel
+import android.app.NotificationManager
+import android.app.PendingIntent
+import android.content.Intent
+import android.os.Build
 
 
 class MainActivity : ComponentActivity() {
@@ -94,7 +100,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
+        createNotificationChannel()
         requestPermissionLauncher = registerForActivityResult(
             ActivityResultContracts.RequestMultiplePermissions()
         ) { permissions ->
@@ -350,7 +356,11 @@ class MainActivity : ComponentActivity() {
             ) {
                 // Botón para tomar una foto
                 IconButton(onClick = {
-                    launcherTakePicture.launch()
+                    if (checkAndRequestPermissions(context, arrayOf(Manifest.permission.CAMERA), 101)) {
+                        launcherTakePicture.launch()
+                    } else {
+                        Toast.makeText(context, "Permiso de cámara requerido", Toast.LENGTH_SHORT).show()
+                    }
                 }) {
                     Icon(
                         painter = painterResource(id = R.drawable.ic_foto),
@@ -370,14 +380,18 @@ class MainActivity : ComponentActivity() {
 
                 // Botón para grabar un video
                 IconButton(onClick = {
-                    val videoFile = createVideoFile(context)
-                    val videoUri = FileProvider.getUriForFile(
-                        context,
-                        "${context.packageName}.provider",
-                        videoFile
-                    )
-                    tempVideoUri.value = videoUri
-                    launcherCaptureVideo.launch(videoUri)
+                    if (checkAndRequestPermissions(context, arrayOf(Manifest.permission.CAMERA), 103)) {
+                        val videoFile = createVideoFile(context)
+                        val videoUri = FileProvider.getUriForFile(
+                            context,
+                            "${context.packageName}.provider",
+                            videoFile
+                        )
+                        tempVideoUri.value = videoUri
+                        launcherCaptureVideo.launch(videoUri)
+                    } else {
+                        Toast.makeText(context, "Permiso de cámara requerido", Toast.LENGTH_SHORT).show()
+                    }
                 }) {
                     Icon(
                         painter = painterResource(id = R.drawable.ic_video),
@@ -838,26 +852,34 @@ class MainActivity : ComponentActivity() {
             // Botón para guardar tarea
             Button(
                 onClick = {
+                    // Convertir la fecha y hora seleccionada a un Long
                     val formatter = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
-                    val date = formatter.parse(dueDate)
-                    val dueDateLong = date?.time ?: System.currentTimeMillis()
+                    val date = formatter.parse(dueDate) // Convierte la fecha seleccionada a Date
+                    val dueDateLong = date?.time ?: System.currentTimeMillis() // Convierte Date a Long
+
 
                     val task = Task(
                         title = title.text,
                         description = description.text,
-                        dueDate = dueDateLong,
-                        multimedia = imageUris.joinToString(",") { it.toString() } + "|" +
-                                videoUris.joinToString(",") { it.toString() } + "|" +
-                                audioUris.joinToString(",") { it.toString() }
+                        dueDate = dueDateLong
                     )
                     viewModel.addTask(task)
+
+
+                    // Programar la alarma
+                    scheduleAlarm(
+                        context = context,
+                        title = task.title,
+                        description = task.description,
+                        timeInMillis = dueDateLong
+                    )
                     navController.navigate("tasksList")
                 },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(8.dp)
             ) {
-                Text("Guardar Tarea")
+                Text(stringResource(R.string.guardar_tarea))
             }
         }
     }
@@ -1249,6 +1271,7 @@ class MainActivity : ComponentActivity() {
                 videoUris = videoUris + savedUri
             }
         }
+
 
         // Cargar la nota al iniciar la pantalla
         LaunchedEffect(note) {
@@ -1863,4 +1886,29 @@ class MainActivity : ComponentActivity() {
             MainScreen(navController)
         }
     }
+    private fun createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val name = "Agenda Notifications"
+            val descriptionText = "Canal para recordatorios de la agenda"
+            val importance = NotificationManager.IMPORTANCE_HIGH
+            val channel = NotificationChannel("agenda_channel", name, importance).apply {
+                description = descriptionText
+            }
+
+            val notificationManager: NotificationManager =
+                getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            notificationManager.createNotificationChannel(channel)
+        }
+    }
+    fun scheduleAlarm(context: Context, title: String, description: String, timeInMillis: Long) {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val intent = Intent(context, AlarmReceiver::class.java).apply {
+            putExtra("title", title)
+            putExtra("description", description)
+        }
+        val pendingIntent = PendingIntent.getBroadcast(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT)
+
+        alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, timeInMillis, pendingIntent)
+    }
+
 }

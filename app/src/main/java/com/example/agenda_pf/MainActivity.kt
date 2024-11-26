@@ -1310,7 +1310,7 @@ class MainActivity : ComponentActivity() {
                         contentDescription = "Tomar Foto"
                     )
                 }
-
+                //Boton para seleccionar imagen de galeria
                 IconButton(onClick = { launcherSelectPictures.launch("image/*") }) {
                     Icon(
                         painter = painterResource(id = R.drawable.ic_gallery),
@@ -1338,7 +1338,7 @@ class MainActivity : ComponentActivity() {
                         contentDescription = "Capturar Video"
                     )
                 }
-
+                //boton para seleccionar video de galeria
                 IconButton(onClick = { launcherSelectVideos.launch("video/*") }) {
                     Icon(
                         painter = painterResource(id = R.drawable.ic_video2),

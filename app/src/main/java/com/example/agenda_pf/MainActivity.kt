@@ -269,23 +269,65 @@ class MainActivity : ComponentActivity() {
     fun AddNoteScreen(viewModel: NoteViewModel, navController: NavHostController) {
         var title by remember { mutableStateOf(TextFieldValue("")) }
         var description by remember { mutableStateOf(TextFieldValue("")) }
+        var imageUris by remember { mutableStateOf(listOf<Uri>()) }
+        var videoUris by remember { mutableStateOf(listOf<Uri>()) }
+        val audioUris = remember { mutableStateListOf<Uri>() }
+        var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
+        var selectedVideoUri by remember { mutableStateOf<Uri?>(null) }
+        var isRecording by remember { mutableStateOf(false) }
 
+        val context = LocalContext.current
+        val mediaRecorder = remember { MediaRecorder() }
+        val mediaPlayer = remember { MediaPlayer() }
+        val tempAudioFile = remember { mutableStateOf<File?>(null) }
+        val tempVideoUri = remember { mutableStateOf<Uri?>(null) }
+
+        // Lanzadores para multimedia
+        val launcherTakePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap ->
+            bitmap?.let {
+                val uri = saveImageToInternalStorage(context, it)
+                imageUris = imageUris + uri
+            }
+        }
+
+        val launcherSelectPictures = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+            uris.forEach { uri ->
+                val savedUri = saveUriToInternalStorage(context, uri, "image_${System.currentTimeMillis()}.jpg")
+                imageUris = imageUris + savedUri
+            }
+        }
+
+        val launcherCaptureVideo = rememberLauncherForActivityResult(ActivityResultContracts.CaptureVideo()) { success ->
+            if (success) {
+                tempVideoUri.value?.let { uri ->
+                    val savedUri = saveUriToInternalStorage(context, uri, "video_${System.currentTimeMillis()}.mp4")
+                    videoUris = videoUris + savedUri
+                } ?: run {
+                    Toast.makeText(context, "Error al capturar el video", Toast.LENGTH_SHORT).show()
+                }
+            } else {
+                Toast.makeText(context, "Captura de video cancelada", Toast.LENGTH_SHORT).show()
+            }
+        }
+
+        val launcherSelectVideos = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+            uris.forEach { uri ->
+                val savedUri = saveUriToInternalStorage(context, uri, "video_${System.currentTimeMillis()}.mp4")
+                videoUris = videoUris + savedUri
+            }
+        }
+
+        // UI para la pantalla de agregar nota
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(16.dp)
         ) {
-            Button(
-                onClick = { navController.navigate("main") },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(stringResource(R.string.regresar))
-            }
-
+            // Título y descripción de la nota
             TextField(
                 value = title,
                 onValueChange = { title = it },
-                placeholder = { Text(stringResource(R.string.t_tulo)) },
+                placeholder = { Text("Título") },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(8.dp)
@@ -293,42 +335,176 @@ class MainActivity : ComponentActivity() {
             TextField(
                 value = description,
                 onValueChange = { description = it },
-                placeholder = { Text(stringResource(R.string.descripci_n)) },
+                placeholder = { Text("Descripción") },
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(8.dp)
             )
 
-            // Nueva sección para íconos de multimedia
+            // Botones para multimedia
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(8.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                IconButton(onClick = { /* Acción para añadir foto */ }) {
+                // Botón para tomar una foto
+                IconButton(onClick = {
+                    launcherTakePicture.launch()
+                }) {
                     Icon(
                         painter = painterResource(id = R.drawable.ic_foto),
-                        contentDescription = "Agregar Foto"
+                        contentDescription = "Tomar Foto"
                     )
                 }
-                IconButton(onClick = { /* Acción para añadir video */ }) {
+
+                // Botón para seleccionar una foto de la galería
+                IconButton(onClick = {
+                    launcherSelectPictures.launch("image/*")
+                }) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_gallery),
+                        contentDescription = "Seleccionar Fotos"
+                    )
+                }
+
+                // Botón para grabar un video
+                IconButton(onClick = {
+                    val videoFile = createVideoFile(context)
+                    val videoUri = FileProvider.getUriForFile(
+                        context,
+                        "${context.packageName}.provider",
+                        videoFile
+                    )
+                    tempVideoUri.value = videoUri
+                    launcherCaptureVideo.launch(videoUri)
+                }) {
                     Icon(
                         painter = painterResource(id = R.drawable.ic_video),
-                        contentDescription = "Agregar Video"
+                        contentDescription = "Capturar Video"
                     )
                 }
-                IconButton(onClick = { /* Acción para añadir audio */ }) {
+
+                // Botón para seleccionar un video de la galería
+                IconButton(onClick = {
+                    launcherSelectVideos.launch("video/*")
+                }) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_video2),
+                        contentDescription = "Seleccionar Videos"
+                    )
+                }
+
+                // Botón para grabar audio
+                IconButton(onClick = {
+                    if (checkAndRequestPermissions(context, arrayOf(Manifest.permission.RECORD_AUDIO), 105)) {
+                        if (isRecording) {
+                            stopRecording(mediaRecorder, tempAudioFile, audioUris, context)
+                            isRecording = false
+                        } else {
+                            startRecording(mediaRecorder, tempAudioFile, context)
+                            isRecording = true
+                        }
+                    } else {
+                        Toast.makeText(context, "Permiso de grabación de audio requerido", Toast.LENGTH_SHORT).show()
+                    }
+                }) {
                     Icon(
                         painter = painterResource(id = R.drawable.ic_audio),
-                        contentDescription = "Agregar Audio"
+                        contentDescription = if (isRecording) "Detener Grabación" else "Grabar Audio",
+                        tint = if (isRecording) Color.Red else Color.Black
                     )
                 }
             }
 
+            // Visualización de multimedia (imágenes, videos, audios)
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
+            ) {
+                items(imageUris) { uri ->
+                    AsyncImage(
+                        model = uri,
+                        contentDescription = "Imagen seleccionada",
+                        modifier = Modifier.size(60.dp)
+                            .clickable { selectedImageUri = uri },
+                        contentScale = ContentScale.Crop
+                    )
+                }
+                items(videoUris) { uri ->
+                    Box(
+                        modifier = Modifier
+                            .size(60.dp)
+                            .clickable { selectedVideoUri = uri },
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_video),
+                            contentDescription = "Video seleccionado",
+                            modifier = Modifier.align(Alignment.Center)
+                        )
+                    }
+                }
+                items(audioUris) { uri ->
+                    Box(
+                        modifier = Modifier
+                            .size(60.dp)
+                            .clickable { playAudio(mediaPlayer, uri, context) }
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_audio),
+                            contentDescription = "Audio seleccionado",
+                            modifier = Modifier.align(Alignment.Center)
+                        )
+                    }
+                }
+            }
+
+            // Visualización ampliada de imagen seleccionada
+            if (selectedImageUri != null) {
+                Dialog(onDismissRequest = { selectedImageUri = null }) {
+                    AsyncImage(
+                        model = selectedImageUri,
+                        contentDescription = "Imagen ampliada",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit
+                    )
+                }
+            }
+
+            // Reproducción de video seleccionado
+            if (selectedVideoUri != null) {
+                Dialog(onDismissRequest = { selectedVideoUri = null }) {
+                    AndroidView(
+                        factory = { context ->
+                            VideoView(context).apply {
+                                setVideoURI(selectedVideoUri)
+                                setOnPreparedListener { it.start() }
+                                setOnErrorListener { _, _, _ ->
+                                    Toast.makeText(
+                                        context,
+                                        "Error al reproducir el video",
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                    true
+                                }
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+
+            // Botón para guardar la nota con multimedia
             Button(
                 onClick = {
-                    val note = Note(title = title.text, description = description.text)
+                    val note = Note(
+                        title = title.text,
+                        description = description.text,
+                        multimedia = imageUris.joinToString(",") { it.toString() } + "|" +
+                                videoUris.joinToString(",") { it.toString() } + "|" +
+                                audioUris.joinToString(",") { it.toString() }
+                    )
                     viewModel.addNote(note)
                     navController.navigate("notesList")
                 },
@@ -336,10 +512,11 @@ class MainActivity : ComponentActivity() {
                     .fillMaxWidth()
                     .padding(8.dp)
             ) {
-                Text(stringResource(R.string.guardar_nota))
+                Text("Guardar Nota")
             }
         }
     }
+
 
 
 
@@ -1020,11 +1197,78 @@ class MainActivity : ComponentActivity() {
         val note by viewModel.getNoteById(noteId).collectAsState(initial = null)
         var title by remember { mutableStateOf(TextFieldValue("")) }
         var description by remember { mutableStateOf(TextFieldValue("")) }
+        var imageUris by remember { mutableStateOf(listOf<Uri>()) }
+        var videoUris by remember { mutableStateOf(listOf<Uri>()) }
+        val audioUris = remember { mutableStateListOf<Uri>() }
+        var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
+        var selectedVideoUri by remember { mutableStateOf<Uri?>(null) }
+        var isRecording by remember { mutableStateOf(false) }
 
+        val context = LocalContext.current
+        val mediaRecorder = remember { MediaRecorder() }
+        val mediaPlayer = remember { MediaPlayer() }
+        val tempAudioFile = remember { mutableStateOf<File?>(null) }
+        val tempVideoUri = remember { mutableStateOf<Uri?>(null) }
+
+        // Lanzadores para multimedia
+        val launcherTakePicture =
+            rememberLauncherForActivityResult(ActivityResultContracts.TakePicturePreview()) { bitmap ->
+                bitmap?.let {
+                    val uri = saveImageToInternalStorage(context, it)
+                    imageUris = imageUris + uri
+                }
+            }
+
+        val launcherSelectPictures = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+            uris.forEach { uri ->
+                val savedUri = saveUriToInternalStorage(context, uri, "image_${System.currentTimeMillis()}.jpg")
+                imageUris = imageUris + savedUri
+            }
+        }
+
+        val launcherCaptureVideo =
+            rememberLauncherForActivityResult(ActivityResultContracts.CaptureVideo()) { success ->
+                if (success) {
+                    tempVideoUri.value?.let { uri ->
+                        val savedUri = saveUriToInternalStorage(
+                            context,
+                            uri,
+                            "video_${System.currentTimeMillis()}.mp4"
+                        )
+                        videoUris = videoUris + savedUri
+                    } ?: run {
+                        Toast.makeText(context, "Error al capturar el video", Toast.LENGTH_SHORT)
+                            .show()
+                    }
+                }
+            }
+
+        val launcherSelectVideos = rememberLauncherForActivityResult(ActivityResultContracts.GetMultipleContents()) { uris ->
+            uris.forEach { uri ->
+                val savedUri = saveUriToInternalStorage(context, uri, "video_${System.currentTimeMillis()}.mp4")
+                videoUris = videoUris + savedUri
+            }
+        }
+
+        // Cargar la nota al iniciar la pantalla
         LaunchedEffect(note) {
             note?.let {
                 title = TextFieldValue(it.title)
                 description = TextFieldValue(it.description)
+
+                val multimediaParts = it.multimedia.split("|")
+                imageUris = multimediaParts.getOrNull(0)?.split(",")?.mapNotNull { uriString ->
+                    uriString.trim().takeIf { it.isNotEmpty() }?.let { Uri.parse(it) }
+                } ?: emptyList()
+                videoUris = multimediaParts.getOrNull(1)?.split(",")?.mapNotNull { uriString ->
+                    uriString.trim().takeIf { it.isNotEmpty() }?.let { Uri.parse(it) }
+                } ?: emptyList()
+                audioUris.clear()
+                audioUris.addAll(
+                    multimediaParts.getOrNull(2)?.split(",")?.mapNotNull { uri ->
+                        uri.trim().takeIf { it.isNotEmpty() }?.let { Uri.parse(it) }
+                    } ?: emptyList()
+                )
             }
         }
 
@@ -1033,83 +1277,187 @@ class MainActivity : ComponentActivity() {
                 .fillMaxSize()
                 .padding(16.dp)
         ) {
+            // Campos de texto
             TextField(
                 value = title,
                 onValueChange = { title = it },
-                placeholder = { Text(stringResource(R.string.t_tulo)) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp)
+                placeholder = { Text("Título") },
+                modifier = Modifier.fillMaxWidth().padding(8.dp)
             )
+
             TextField(
                 value = description,
                 onValueChange = { description = it },
-                placeholder = { Text(stringResource(R.string.descripci_n)) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp)
+                placeholder = { Text("Descripción") },
+                modifier = Modifier.fillMaxWidth().padding(8.dp)
             )
 
-            // Nueva sección para íconos de multimedia
+            // Botones de multimedia
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp),
+                modifier = Modifier.fillMaxWidth().padding(8.dp),
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
-                IconButton(onClick = { /* Acción para añadir foto */ }) {
+                // Botón para tomar una foto
+                IconButton(onClick = {
+                    if (checkAndRequestPermissions(context, arrayOf(Manifest.permission.CAMERA), 101)) {
+                        launcherTakePicture.launch()
+                    } else {
+                        Toast.makeText(context, "Permiso de cámara requerido", Toast.LENGTH_SHORT).show()
+                    }
+                }) {
                     Icon(
                         painter = painterResource(id = R.drawable.ic_foto),
-                        contentDescription = "Agregar Foto"
+                        contentDescription = "Tomar Foto"
                     )
                 }
-                IconButton(onClick = { /* Acción para añadir video */ }) {
+
+                IconButton(onClick = { launcherSelectPictures.launch("image/*") }) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_gallery),
+                        contentDescription = "Seleccionar Fotos"
+                    )
+                }
+
+                // Botón para grabar un video
+                IconButton(onClick = {
+                    if (checkAndRequestPermissions(context, arrayOf(Manifest.permission.CAMERA), 103)) {
+                        val videoFile = createVideoFile(context)
+                        val videoUri = FileProvider.getUriForFile(
+                            context,
+                            "${context.packageName}.provider",
+                            videoFile
+                        )
+                        tempVideoUri.value = videoUri
+                        launcherCaptureVideo.launch(videoUri)
+                    } else {
+                        Toast.makeText(context, "Permiso de cámara requerido", Toast.LENGTH_SHORT).show()
+                    }
+                }) {
                     Icon(
                         painter = painterResource(id = R.drawable.ic_video),
-                        contentDescription = "Agregar Video"
+                        contentDescription = "Capturar Video"
                     )
                 }
-                IconButton(onClick = { /* Acción para añadir audio */ }) {
+
+                IconButton(onClick = { launcherSelectVideos.launch("video/*") }) {
+                    Icon(
+                        painter = painterResource(id = R.drawable.ic_video2),
+                        contentDescription = "Seleccionar Videos"
+                    )
+                }
+
+                IconButton(onClick = {
+                    if (isRecording) {
+                        stopRecording(mediaRecorder, tempAudioFile, audioUris, context)
+                        isRecording = false
+                    } else {
+                        startRecording(mediaRecorder, tempAudioFile, context)
+                        isRecording = true
+                    }
+                }) {
                     Icon(
                         painter = painterResource(id = R.drawable.ic_audio),
-                        contentDescription = "Agregar Audio"
+                        contentDescription = if (isRecording) "Detener Grabación" else "Grabar Audio",
+                        tint = if (isRecording) Color.Red else Color.Black
                     )
                 }
             }
 
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly
-            ) {
-                Button(
-                    onClick = {
-                        note?.let {
-                            viewModel.updateNote(
-                                Note(
-                                    id = it.id,
-                                    title = title.text,
-                                    description = description.text
-                                )
-                            )
-                        }
-                        navController.navigate("notesList")
-                    },
-                    modifier = Modifier.padding(4.dp)
-                ) {
-                    Text(stringResource(R.string.guardar_cambios))
+            // Visualización de multimedia
+            LazyRow(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+                items(imageUris) { uri ->
+                    AsyncImage(
+                        model = uri,
+                        contentDescription = "Imagen seleccionada",
+                        modifier = Modifier.size(60.dp).clickable { selectedImageUri = uri },
+                        contentScale = ContentScale.Crop
+                    )
                 }
 
-                OutlinedButton(
-                    onClick = { navController.navigate("notesList") },
-                    modifier = Modifier.padding(4.dp)
-                ) {
-                    Text(stringResource(R.string.cancelar))
+                items(videoUris) { uri ->
+                    Box(
+                        modifier = Modifier.size(60.dp).clickable { selectedVideoUri = uri },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_video),
+                            contentDescription = "Video seleccionado"
+                        )
+                    }
+                }
+
+                items(audioUris) { uri ->
+                    Box(
+                        modifier = Modifier.size(60.dp).clickable { playAudio(mediaPlayer, uri, context) },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_audio),
+                            contentDescription = "Audio seleccionado"
+                        )
+                    }
+                }
+            }
+
+            // Visualización ampliada de imagen
+            if (selectedImageUri != null) {
+                Dialog(onDismissRequest = { selectedImageUri = null }) {
+                    AsyncImage(
+                        model = selectedImageUri,
+                        contentDescription = "Imagen ampliada",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Fit
+                    )
+                }
+            }
+
+            // Reproducción de video seleccionado
+            if (selectedVideoUri != null) {
+                Dialog(onDismissRequest = { selectedVideoUri = null }) {
+                    AndroidView(
+                        factory = { context ->
+                            VideoView(context).apply {
+                                setVideoURI(selectedVideoUri)
+                                setOnPreparedListener { it.start() }
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
+            }
+
+            // Botones de guardar y cancelar
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(8.dp),
+                horizontalArrangement = Arrangement.SpaceEvenly
+            ) {
+                Button(onClick = {
+                    note?.let {
+                        viewModel.updateNote(
+                            Note(
+                                id = it.id,
+                                title = title.text,
+                                description = description.text,
+                                multimedia = imageUris.joinToString(",") { it.toString() } +
+                                        "|" +
+                                        videoUris.joinToString(",") { it.toString() } +
+                                        "|" +
+                                        audioUris.joinToString(",") { it.toString() }
+                            )
+                        )
+                    }
+                    navController.navigate("notesList")
+                }) {
+                    Text("Guardar Cambios")
+                }
+
+                OutlinedButton(onClick = { navController.navigate("notesList") }) {
+                    Text("Cancelar")
                 }
             }
         }
     }
+
 
 
     @Composable

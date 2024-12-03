@@ -4,8 +4,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.agenda_pf.data.entities.Task
 import com.example.agenda_pf.data.repository.TaskRepository
+import com.google.common.reflect.TypeToken
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
+
 
 class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
     val allTasks: Flow<List<Task>> = repository.getAllTasks()
@@ -31,4 +33,5 @@ class TaskViewModel(private val repository: TaskRepository) : ViewModel() {
 
 
     fun getTaskById(taskId: Int): Flow<Task?> = repository.getTaskById(taskId)
+
 }

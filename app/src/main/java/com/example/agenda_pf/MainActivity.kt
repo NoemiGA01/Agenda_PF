@@ -83,6 +83,14 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Intent
 import android.os.Build
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.runtime.snapshots.SnapshotStateList
+import kotlin.random.Random
+import java.util.Date
+
+
 
 
 class MainActivity : ComponentActivity() {
@@ -100,7 +108,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        createNotificationChannel()
+        // Crear el canal de notificación al inicio de la app
+        createNotificationChannel(this)
         requestPermissionLauncher = registerForActivityResult(
             ActivityResultContracts.RequestMultiplePermissions()
         ) { permissions ->
@@ -271,13 +280,14 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    @OptIn(ExperimentalFoundationApi::class)
     @Composable
     fun AddNoteScreen(viewModel: NoteViewModel, navController: NavHostController) {
         var title by remember { mutableStateOf(TextFieldValue("")) }
         var description by remember { mutableStateOf(TextFieldValue("")) }
         var imageUris by remember { mutableStateOf(listOf<Uri>()) }
         var videoUris by remember { mutableStateOf(listOf<Uri>()) }
-        val audioUris = remember { mutableStateListOf<Uri>() }
+        var audioUris = remember { mutableStateListOf<Uri>() }
         var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
         var selectedVideoUri by remember { mutableStateOf<Uri?>(null) }
         var isRecording by remember { mutableStateOf(false) }
@@ -431,26 +441,51 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            // Visualización de multimedia (imágenes, videos, audios)
+            // Visualización de multimedia con eliminación al mantener presionado
             LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 8.dp)
             ) {
+                // Elementos de imagen
                 items(imageUris) { uri ->
-                    AsyncImage(
-                        model = uri,
-                        contentDescription = "Imagen seleccionada",
-                        modifier = Modifier.size(60.dp)
-                            .clickable { selectedImageUri = uri },
-                        contentScale = ContentScale.Crop
-                    )
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .width(60.dp)
+                            .padding(horizontal = 4.dp)
+                    ) {
+                        AsyncImage(
+                            model = uri,
+                            contentDescription = "Imagen seleccionada",
+                            modifier = Modifier
+                                .size(60.dp)
+                                .combinedClickable(
+                                    onClick = { selectedImageUri = uri },
+                                    onLongClick = {
+                                        val updatedList = imageUris.toMutableList()
+                                        updatedList.remove(uri)
+                                        imageUris = updatedList
+                                    }
+                                ),
+                            contentScale = ContentScale.Crop
+                        )
+                    }
                 }
+
+                // Elementos de video
                 items(videoUris) { uri ->
                     Box(
                         modifier = Modifier
                             .size(60.dp)
-                            .clickable { selectedVideoUri = uri },
+                            .combinedClickable(
+                                onClick = { selectedVideoUri = uri },
+                                onLongClick = {
+                                    val updatedList = videoUris.toMutableList()
+                                    updatedList.remove(uri)
+                                    videoUris = updatedList
+                                }
+                            )
                     ) {
                         Icon(
                             painter = painterResource(id = R.drawable.ic_video),
@@ -459,11 +494,20 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 }
+
+                // Elementos de audio
                 items(audioUris) { uri ->
                     Box(
                         modifier = Modifier
                             .size(60.dp)
-                            .clickable { playAudio(mediaPlayer, uri, context) }
+                            .combinedClickable(
+                                onClick = { playAudio(mediaPlayer, uri, context) },
+                                onLongClick = {
+                                    val updatedList = audioUris.toMutableList()
+                                    updatedList.remove(uri)
+                                    audioUris = updatedList as SnapshotStateList<Uri>
+                                }
+                            )
                     ) {
                         Icon(
                             painter = painterResource(id = R.drawable.ic_audio),
@@ -533,26 +577,54 @@ class MainActivity : ComponentActivity() {
 
 
 
-
-
-
+    @OptIn(ExperimentalFoundationApi::class)
     @Composable
     fun AddTaskScreen(viewModel: TaskViewModel, navController: NavHostController) {
         var title by remember { mutableStateOf(TextFieldValue("")) }
         var description by remember { mutableStateOf(TextFieldValue("")) }
-        var dueDate by remember { mutableStateOf("") }
+        var dueDate by remember { mutableStateOf<Long?>(null) }
         var imageUris by remember { mutableStateOf(listOf<Uri>()) }
         var videoUris by remember { mutableStateOf(listOf<Uri>()) }
-        val audioUris = remember { mutableStateListOf<Uri>() }
+        var audioUris = remember { mutableStateListOf<Uri>() }
         var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
         var selectedVideoUri by remember { mutableStateOf<Uri?>(null) }
         var isRecording by remember { mutableStateOf(false) }
+
+
 
         val context = LocalContext.current
         val mediaRecorder = remember { MediaRecorder() }
         val mediaPlayer = remember { MediaPlayer() }
         val tempAudioFile = remember { mutableStateOf<File?>(null) }
         val tempVideoUri = remember { mutableStateOf<Uri?>(null) }
+
+        // Mantener las fechas separadas para que no se sobreescriban
+        var taskDueDate by remember { mutableStateOf<Long?>(null) }
+        val reminders = remember { mutableStateListOf<Pair<Long, String>>() } // Recordatorios: Pair<TimeMillis, DisplayText>
+
+
+
+
+        fun scheduleNotification(context: Context, timeMillis: Long, message: String, taskTitle: String) {
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val intent = Intent(context, NotificationReceiver::class.java).apply {
+                putExtra("notification_message", message)
+                putExtra("taskTitle", taskTitle) // Pasar el título de la tarea
+            }
+
+            val pendingIntent = PendingIntent.getBroadcast(
+                context,
+                timeMillis.hashCode(), // ID único
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            alarmManager.setExactAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP,
+                timeMillis,
+                pendingIntent
+            )
+        }
 
         // Lanzadores para multimedia
         val launcherTakePicture =
@@ -608,12 +680,11 @@ class MainActivity : ComponentActivity() {
                     videoUris = videoUris + savedUri
                 }
             }
-
-
         // Control de fecha y hora
         var showDatePicker by remember { mutableStateOf(false) }
-        var selectedDate by remember { mutableStateOf("") }
-        var showTimePicker by remember { mutableStateOf(false) }
+        // Variables separadas para controlar los diálogos
+        var showDatePickerForDueDate by remember { mutableStateOf(false) }
+        var showDatePickerForReminder by remember { mutableStateOf(false) }
 
         Column(
             modifier = Modifier
@@ -637,25 +708,45 @@ class MainActivity : ComponentActivity() {
                     .fillMaxWidth()
                     .padding(8.dp)
             )
-
-            // Botón para seleccionar fecha y hora
-            Button(
-                onClick = { showDatePicker = true },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp)
-            ) {
-                Text(if (dueDate.isEmpty()) "Seleccionar Fecha y Hora" else "Fecha: $dueDate")
+            // Botón de Fecha Final
+            Button(onClick = { showDatePickerForDueDate = true }, modifier = Modifier.fillMaxWidth().padding(8.dp)) {
+                Text(
+                    text = if (taskDueDate != null) {
+                        SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(taskDueDate!!))
+                    } else {
+                        "Seleccionar Fecha Final"
+                    }
+                )
             }
 
-            if (showDatePicker) {
+// Mostrar DatePicker para la Fecha Final
+            if (showDatePickerForDueDate) {
                 val calendar = Calendar.getInstance()
                 android.app.DatePickerDialog(
                     context,
                     { _, year, month, day ->
-                        selectedDate = "$day/${month + 1}/$year"
-                        showDatePicker = false
-                        showTimePicker = true
+                        val dueDateCalendar = Calendar.getInstance().apply {
+                            set(Calendar.YEAR, year)
+                            set(Calendar.MONTH, month)
+                            set(Calendar.DAY_OF_MONTH, day)
+                        }
+
+                        // Mostrar TimePicker después de seleccionar la fecha
+                        TimePickerDialog(
+                            context,
+                            { _, hour, minute ->
+                                dueDateCalendar.set(Calendar.HOUR_OF_DAY, hour)
+                                dueDateCalendar.set(Calendar.MINUTE, minute)
+                                dueDateCalendar.set(Calendar.SECOND, 0)
+                                dueDateCalendar.set(Calendar.MILLISECOND, 0)
+
+                                taskDueDate = dueDateCalendar.timeInMillis // Asigna la fecha final
+                            },
+                            calendar.get(Calendar.HOUR_OF_DAY),
+                            calendar.get(Calendar.MINUTE),
+                            true
+                        ).show()
+                        showDatePickerForDueDate = false
                     },
                     calendar.get(Calendar.YEAR),
                     calendar.get(Calendar.MONTH),
@@ -663,19 +754,69 @@ class MainActivity : ComponentActivity() {
                 ).show()
             }
 
-            if (showTimePicker) {
+
+            // Botón para Agregar Recordatorio
+            Button(onClick = { showDatePickerForReminder = true }, modifier = Modifier.fillMaxWidth().padding(8.dp)) {
+                Text("Agregar Recordatorio")
+            }
+
+// Mostrar DatePicker para agregar recordatorio
+            if (showDatePickerForReminder) {
                 val calendar = Calendar.getInstance()
-                TimePickerDialog(
+                android.app.DatePickerDialog(
                     context,
-                    { _, hour, minute ->
-                        dueDate = "$selectedDate $hour:$minute"
-                        showTimePicker = false
+                    { _, year, month, day ->
+                        val reminderCalendar = Calendar.getInstance().apply {
+                            set(Calendar.YEAR, year)
+                            set(Calendar.MONTH, month)
+                            set(Calendar.DAY_OF_MONTH, day)
+                        }
+
+                        // Mostrar TimePicker para el recordatorio
+                        TimePickerDialog(
+                            context,
+                            { _, hour, minute ->
+                                reminderCalendar.set(Calendar.HOUR_OF_DAY, hour)
+                                reminderCalendar.set(Calendar.MINUTE, minute)
+                                reminderCalendar.set(Calendar.SECOND, 0)
+                                reminderCalendar.set(Calendar.MILLISECOND, 0)
+
+                                // Agregar recordatorio a la lista
+                                reminders.add(
+                                    Pair(
+                                        reminderCalendar.timeInMillis,
+                                        SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(reminderCalendar.time)
+                                    )
+                                )
+                            },
+                            calendar.get(Calendar.HOUR_OF_DAY),
+                            calendar.get(Calendar.MINUTE),
+                            true
+                        ).show()
+                        showDatePickerForReminder = false
                     },
-                    calendar.get(Calendar.HOUR_OF_DAY),
-                    calendar.get(Calendar.MINUTE),
-                    true
+                    calendar.get(Calendar.YEAR),
+                    calendar.get(Calendar.MONTH),
+                    calendar.get(Calendar.DAY_OF_MONTH)
                 ).show()
             }
+
+            // Mostrar Lista de Recordatorios
+            Spacer(modifier = Modifier.height(16.dp))
+            Text("Recordatorios", style = MaterialTheme.typography.titleMedium)
+            reminders.forEachIndexed { index, reminder ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(reminder.second)
+                    IconButton(onClick = { reminders.removeAt(index) }) {
+                        Icon(Icons.Default.Delete, contentDescription = "Eliminar")
+                    }
+                }
+            }
+
+
 
             // Botones de multimedia
             Row(
@@ -767,30 +908,54 @@ class MainActivity : ComponentActivity() {
                         tint = if (isRecording) Color.Red else Color.Black
                     )
                 }
+
+
             }
-
-
-
-            // Visualización de multimedia
+    // Visualización de multimedia con eliminación al mantener presionado
             LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 8.dp)
             ) {
+                // Elementos de imagen
                 items(imageUris) { uri ->
-                    AsyncImage(
-                        model = uri,
-                        contentDescription = "Imagen seleccionada",
-                        modifier = Modifier.size(60.dp)
-                            .clickable { selectedImageUri = uri },
-                        contentScale = ContentScale.Crop
-                    )
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .width(60.dp)
+                            .padding(horizontal = 4.dp)
+                    ) {
+                        AsyncImage(
+                            model = uri,
+                            contentDescription = "Imagen seleccionada",
+                            modifier = Modifier
+                                .size(60.dp)
+                                .combinedClickable(
+                                    onClick = { selectedImageUri = uri },
+                                    onLongClick = {
+                                        val updatedList = imageUris.toMutableList()
+                                        updatedList.remove(uri)
+                                        imageUris = updatedList
+                                    }
+                                ),
+                            contentScale = ContentScale.Crop
+                        )
+                    }
                 }
+
+                // Elementos de video
                 items(videoUris) { uri ->
                     Box(
                         modifier = Modifier
                             .size(60.dp)
-                            .clickable { selectedVideoUri = uri },
+                            .combinedClickable(
+                                onClick = { selectedVideoUri = uri },
+                                onLongClick = {
+                                    val updatedList = videoUris.toMutableList()
+                                    updatedList.remove(uri)
+                                    videoUris = updatedList
+                                }
+                            )
                     ) {
                         Icon(
                             painter = painterResource(id = R.drawable.ic_video),
@@ -799,11 +964,20 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                 }
+
+                // Elementos de audio
                 items(audioUris) { uri ->
                     Box(
                         modifier = Modifier
                             .size(60.dp)
-                            .clickable { playAudio(mediaPlayer, uri, context) }
+                            .combinedClickable(
+                                onClick = { playAudio(mediaPlayer, uri, context) },
+                                onLongClick = {
+                                    val updatedList = audioUris.toMutableList()
+                                    updatedList.remove(uri)
+                                    audioUris = updatedList as SnapshotStateList<Uri>
+                                }
+                            )
                     ) {
                         Icon(
                             painter = painterResource(id = R.drawable.ic_audio),
@@ -849,44 +1023,59 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            // Botón para guardar tarea
+            // Botón para guardar la tarea
             Button(
                 onClick = {
-                    // Convertir la fecha y hora seleccionada a un Long
-                    val formatter = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
-                    val date = formatter.parse(dueDate) // Convierte la fecha seleccionada a Date
-                    val dueDateLong = date?.time ?: System.currentTimeMillis() // Convierte Date a Long
-
-
                     val task = Task(
                         title = title.text,
                         description = description.text,
-                        dueDate = dueDateLong
+                        dueDate = taskDueDate ?: System.currentTimeMillis(),
+                        reminderDate = reminders.firstOrNull()?.first,
+                        multimedia = imageUris.joinToString(",") { it.toString() } + "|" +
+                                videoUris.joinToString(",") { it.toString() } + "|" +
+                                audioUris.joinToString(",") { it.toString() }
                     )
                     viewModel.addTask(task)
+                    // Programar las notificaciones de los recordatorios
+                    reminders.forEach {
+                        scheduleNotification(
+                            context = context,
+                            timeMillis = it.first, // Tiempo del recordatorio
+                            message = "Recordatorio: ${it.second}", // Mensaje del recordatorio
+                            taskTitle = title.text // Título de la tarea
+                        )
+                    }
 
+// Programar la notificación para la fecha final
+                    taskDueDate?.let {
+                        scheduleNotification(
+                            context = context,
+                            timeMillis = it, // Tiempo de vencimiento
+                            message = "¡Tu tarea ya venció!", // Mensaje de vencimiento
+                            taskTitle = title.text // Título de la tarea
+                        )
+                    }
 
-                    // Programar la alarma
-                    scheduleAlarm(
-                        context = context,
-                        title = task.title,
-                        description = task.description,
-                        timeInMillis = dueDateLong
-                    )
                     navController.navigate("tasksList")
                 },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(8.dp)
+                modifier = Modifier.fillMaxWidth().padding(8.dp)
             ) {
-                Text(stringResource(R.string.guardar_tarea))
+                Text("Guardar Tarea")
             }
+
         }
     }
 
 
+
+
+
     //Solicitar permisos
-    fun checkAndRequestPermissions(context: Context, permissions: Array<String>, requestCode: Int): Boolean {
+    fun checkAndRequestPermissions(
+        context: Context,
+        permissions: Array<String>,
+        requestCode: Int
+    ): Boolean {
         val missingPermissions = permissions.filter {
             ContextCompat.checkSelfPermission(context, it) != PackageManager.PERMISSION_GRANTED
         }
@@ -897,7 +1086,6 @@ class MainActivity : ComponentActivity() {
             true
         }
     }
-
 
 
     //Inicar la grabacion de audio
@@ -930,7 +1118,6 @@ class MainActivity : ComponentActivity() {
                 .show()
         }
     }
-
 
 
     // Detener grabación
@@ -1214,6 +1401,7 @@ class MainActivity : ComponentActivity() {
     }
 
 
+    @OptIn(ExperimentalFoundationApi::class)
     @Composable
     fun EditNoteScreen(viewModel: NoteViewModel, navController: NavHostController, noteId: Int) {
         val note by viewModel.getNoteById(noteId).collectAsState(initial = null)
@@ -1221,7 +1409,7 @@ class MainActivity : ComponentActivity() {
         var description by remember { mutableStateOf(TextFieldValue("")) }
         var imageUris by remember { mutableStateOf(listOf<Uri>()) }
         var videoUris by remember { mutableStateOf(listOf<Uri>()) }
-        val audioUris = remember { mutableStateListOf<Uri>() }
+        var audioUris = remember { mutableStateListOf<Uri>() }
         var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
         var selectedVideoUri by remember { mutableStateOf<Uri?>(null) }
         var isRecording by remember { mutableStateOf(false) }
@@ -1231,6 +1419,8 @@ class MainActivity : ComponentActivity() {
         val mediaPlayer = remember { MediaPlayer() }
         val tempAudioFile = remember { mutableStateOf<File?>(null) }
         val tempVideoUri = remember { mutableStateOf<Uri?>(null) }
+
+        val reminders = remember { mutableStateListOf<Pair<String, Long>>() }
 
         // Lanzadores para multimedia
         val launcherTakePicture =
@@ -1386,37 +1576,78 @@ class MainActivity : ComponentActivity() {
                 }
             }
 
-            // Visualización de multimedia
-            LazyRow(modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+            // Visualización de multimedia con eliminación al mantener presionado
+            LazyRow(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
+            ) {
+                // Elementos de imagen
                 items(imageUris) { uri ->
-                    AsyncImage(
-                        model = uri,
-                        contentDescription = "Imagen seleccionada",
-                        modifier = Modifier.size(60.dp).clickable { selectedImageUri = uri },
-                        contentScale = ContentScale.Crop
-                    )
-                }
-
-                items(videoUris) { uri ->
-                    Box(
-                        modifier = Modifier.size(60.dp).clickable { selectedVideoUri = uri },
-                        contentAlignment = Alignment.Center
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .width(60.dp)
+                            .padding(horizontal = 4.dp)
                     ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_video),
-                            contentDescription = "Video seleccionado"
+                        AsyncImage(
+                            model = uri,
+                            contentDescription = "Imagen seleccionada",
+                            modifier = Modifier
+                                .size(60.dp)
+                                .combinedClickable(
+                                    onClick = { selectedImageUri = uri },
+                                    onLongClick = {
+                                        val updatedList = imageUris.toMutableList()
+                                        updatedList.remove(uri)
+                                        imageUris = updatedList
+                                    }
+                                ),
+                            contentScale = ContentScale.Crop
                         )
                     }
                 }
 
+                // Elementos de video
+                items(videoUris) { uri ->
+                    Box(
+                        modifier = Modifier
+                            .size(60.dp)
+                            .combinedClickable(
+                                onClick = { selectedVideoUri = uri },
+                                onLongClick = {
+                                    val updatedList = videoUris.toMutableList()
+                                    updatedList.remove(uri)
+                                    videoUris = updatedList
+                                }
+                            )
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_video),
+                            contentDescription = "Video seleccionado",
+                            modifier = Modifier.align(Alignment.Center)
+                        )
+                    }
+                }
+
+                // Elementos de audio
                 items(audioUris) { uri ->
                     Box(
-                        modifier = Modifier.size(60.dp).clickable { playAudio(mediaPlayer, uri, context) },
-                        contentAlignment = Alignment.Center
+                        modifier = Modifier
+                            .size(60.dp)
+                            .combinedClickable(
+                                onClick = { playAudio(mediaPlayer, uri, context) },
+                                onLongClick = {
+                                    val updatedList = audioUris.toMutableList()
+                                    updatedList.remove(uri)
+                                    audioUris = updatedList as SnapshotStateList<Uri>
+                                }
+                            )
                     ) {
                         Icon(
                             painter = painterResource(id = R.drawable.ic_audio),
-                            contentDescription = "Audio seleccionado"
+                            contentDescription = "Audio seleccionado",
+                            modifier = Modifier.align(Alignment.Center)
                         )
                     }
                 }
@@ -1482,16 +1713,16 @@ class MainActivity : ComponentActivity() {
     }
 
 
-
+    @OptIn(ExperimentalFoundationApi::class)
     @Composable
     fun EditTaskScreen(viewModel: TaskViewModel, navController: NavHostController, taskId: Int) {
         val task by viewModel.getTaskById(taskId).collectAsState(initial = null)
         var title by remember { mutableStateOf(TextFieldValue("")) }
         var description by remember { mutableStateOf(TextFieldValue("")) }
-        var dueDate by remember { mutableStateOf("") }
+        var dueDate by remember { mutableStateOf<Long?>(null) }
         var imageUris by remember { mutableStateOf(listOf<Uri>()) }
         var videoUris by remember { mutableStateOf(listOf<Uri>()) }
-        val audioUris = remember { mutableStateListOf<Uri>() }
+        var audioUris = remember { mutableStateListOf<Uri>() }
         var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
         var selectedVideoUri by remember { mutableStateOf<Uri?>(null) }
         var isRecording by remember { mutableStateOf(false) }
@@ -1506,6 +1737,33 @@ class MainActivity : ComponentActivity() {
 
         val tempImageUri = remember { mutableStateOf<Uri?>(null) }
         val tempVideoUri = remember { mutableStateOf<Uri?>(null) }
+
+        val reminders = remember { mutableStateListOf<Pair<Long, String>>() }
+
+        var showDatePickerForDueDate by remember { mutableStateOf(false) }
+        var showDatePickerForReminder by remember { mutableStateOf(false) }
+
+        fun scheduleNotification(context: Context, timeMillis: Long, message: String, taskTitle: String) {
+            val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+            val intent = Intent(context, NotificationReceiver::class.java).apply {
+                putExtra("notification_message", message)
+                putExtra("task_title", taskTitle)
+            }
+
+            val pendingIntent = PendingIntent.getBroadcast(
+                context,
+                timeMillis.hashCode(), // Un identificador único
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+
+            alarmManager.setExactAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP,
+                timeMillis,
+                pendingIntent
+            )
+        }
+
 
         // Lanzadores para imágenes, videos y audios
         val launcherTakePicture =
@@ -1566,7 +1824,7 @@ class MainActivity : ComponentActivity() {
                 title = TextFieldValue(it.title)
                 description = TextFieldValue(it.description)
                 val formatter = SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
-                dueDate = formatter.format(it.dueDate)
+                dueDate = it.dueDate
 
                 val multimediaParts = it.multimedia.split("|")
                 imageUris = multimediaParts.getOrNull(0)?.split(",")?.mapNotNull { uriString ->
@@ -1583,7 +1841,6 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
-
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -1604,22 +1861,95 @@ class MainActivity : ComponentActivity() {
                 modifier = Modifier.fillMaxWidth().padding(8.dp)
             )
 
-            // Botón para seleccionar fecha
-            Button(
-                onClick = { showDatePicker = true },
-                modifier = Modifier.fillMaxWidth().padding(8.dp)
-            ) {
-                Text(if (dueDate.isEmpty()) "Seleccionar Fecha y Hora" else "Fecha: $dueDate")
+            // Mostrar y editar fecha final
+            Button(onClick = { showDatePickerForDueDate = true }, modifier = Modifier.fillMaxWidth().padding(8.dp)) {
+                Text(
+                    text = dueDate?.let {
+                        SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(Date(it))
+                    } ?: "Seleccionar Fecha Final"
+                )
             }
 
-            if (showDatePicker) {
+            // Mostrar DatePicker para la Fecha Final
+            if (showDatePickerForDueDate) {
                 val calendar = Calendar.getInstance()
                 android.app.DatePickerDialog(
                     context,
                     { _, year, month, day ->
-                        selectedDate = "$day/${month + 1}/$year"
-                        showDatePicker = false
-                        showTimePicker = true
+                        val dueDateCalendar = Calendar.getInstance().apply {
+                            set(Calendar.YEAR, year)
+                            set(Calendar.MONTH, month)
+                            set(Calendar.DAY_OF_MONTH, day)
+                        }
+
+                        // Mostrar TimePicker después de seleccionar la fecha
+                        TimePickerDialog(
+                            context,
+                            { _, hour, minute ->
+                                dueDateCalendar.set(Calendar.HOUR_OF_DAY, hour)
+                                dueDateCalendar.set(Calendar.MINUTE, minute)
+                                dueDateCalendar.set(Calendar.SECOND, 0)
+                                dueDateCalendar.set(Calendar.MILLISECOND, 0)
+
+                                dueDate = dueDateCalendar.timeInMillis // Asigna la fecha final
+                            },
+                            calendar.get(Calendar.HOUR_OF_DAY),
+                            calendar.get(Calendar.MINUTE),
+                            true
+                        ).show()
+                        showDatePickerForDueDate = false
+                    },
+                    calendar.get(Calendar.YEAR),
+                    calendar.get(Calendar.MONTH),
+                    calendar.get(Calendar.DAY_OF_MONTH)
+                ).show()
+            }
+            Button(onClick = { dueDate = null }, modifier = Modifier.fillMaxWidth().padding(8.dp)) {
+                Text("Eliminar Fecha Final")
+            }
+
+
+
+
+            // Botón para Agregar Recordatorio
+            Button(onClick = { showDatePickerForReminder = true }, modifier = Modifier.fillMaxWidth().padding(8.dp)) {
+                Text("Agregar Recordatorio")
+            }
+
+// Mostrar DatePicker para agregar recordatorio
+            if (showDatePickerForReminder) {
+                val calendar = Calendar.getInstance()
+                android.app.DatePickerDialog(
+                    context,
+                    { _, year, month, day ->
+                        val reminderCalendar = Calendar.getInstance().apply {
+                            set(Calendar.YEAR, year)
+                            set(Calendar.MONTH, month)
+                            set(Calendar.DAY_OF_MONTH, day)
+                        }
+
+                        // Mostrar TimePicker para el recordatorio
+                        TimePickerDialog(
+                            context,
+                            { _, hour, minute ->
+                                reminderCalendar.set(Calendar.HOUR_OF_DAY, hour)
+                                reminderCalendar.set(Calendar.MINUTE, minute)
+                                reminderCalendar.set(Calendar.SECOND, 0)
+                                reminderCalendar.set(Calendar.MILLISECOND, 0)
+
+                                // Agregar recordatorio a la lista
+                                reminders.add(
+                                    Pair(
+                                        reminderCalendar.timeInMillis,
+                                        SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault()).format(reminderCalendar.time)
+                                    )
+                                )
+                            },
+                            calendar.get(Calendar.HOUR_OF_DAY),
+                            calendar.get(Calendar.MINUTE),
+                            true
+                        ).show()
+                        showDatePickerForReminder = false
                     },
                     calendar.get(Calendar.YEAR),
                     calendar.get(Calendar.MONTH),
@@ -1627,18 +1957,19 @@ class MainActivity : ComponentActivity() {
                 ).show()
             }
 
-            if (showTimePicker) {
-                val calendar = Calendar.getInstance()
-                TimePickerDialog(
-                    context,
-                    { _, hour, minute ->
-                        dueDate = "$selectedDate $hour:$minute"
-                        showTimePicker = false
-                    },
-                    calendar.get(Calendar.HOUR_OF_DAY),
-                    calendar.get(Calendar.MINUTE),
-                    true
-                ).show()
+            // Mostrar Lista de Recordatorios
+            Spacer(modifier = Modifier.height(16.dp))
+            Text("Recordatorios", style = MaterialTheme.typography.titleMedium)
+            reminders.forEachIndexed { index, reminder ->
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(8.dp),
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(reminder.second)
+                    IconButton(onClick = { reminders.removeAt(index) }) {
+                        Icon(Icons.Default.Delete, contentDescription = "Eliminar")
+                    }
+                }
             }
 
             // Botones para multimedia
@@ -1734,41 +2065,78 @@ class MainActivity : ComponentActivity() {
             }
 
 
-
-            // Mostrar multimedia existente
+// Visualización de multimedia con eliminación al mantener presionado
             LazyRow(
-                modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp)
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 8.dp)
             ) {
+                // Elementos de imagen
                 items(imageUris) { uri ->
-                    AsyncImage(
-                        model = uri,
-                        contentDescription = "Imagen seleccionada",
-                        modifier = Modifier.size(60.dp).clickable { selectedImageUri = uri },
-                        contentScale = ContentScale.Crop
-                    )
-                }
-
-                items(videoUris) { uri ->
-                    Box(
-                        modifier = Modifier.size(60.dp).clickable { selectedVideoUri = uri },
-                        contentAlignment = Alignment.Center
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .width(60.dp)
+                            .padding(horizontal = 4.dp)
                     ) {
-                        Icon(
-                            painter = painterResource(id = R.drawable.ic_video),
-                            contentDescription = "Video seleccionado"
+                        AsyncImage(
+                            model = uri,
+                            contentDescription = "Imagen seleccionada",
+                            modifier = Modifier
+                                .size(60.dp)
+                                .combinedClickable(
+                                    onClick = { selectedImageUri = uri },
+                                    onLongClick = {
+                                        val updatedList = imageUris.toMutableList()
+                                        updatedList.remove(uri)
+                                        imageUris = updatedList
+                                    }
+                                ),
+                            contentScale = ContentScale.Crop
                         )
                     }
                 }
 
+                // Elementos de video
+                items(videoUris) { uri ->
+                    Box(
+                        modifier = Modifier
+                            .size(60.dp)
+                            .combinedClickable(
+                                onClick = { selectedVideoUri = uri },
+                                onLongClick = {
+                                    val updatedList = videoUris.toMutableList()
+                                    updatedList.remove(uri)
+                                    videoUris = updatedList
+                                }
+                            )
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_video),
+                            contentDescription = "Video seleccionado",
+                            modifier = Modifier.align(Alignment.Center)
+                        )
+                    }
+                }
+
+                // Elementos de audio
                 items(audioUris) { uri ->
                     Box(
-                        modifier = Modifier.size(60.dp)
-                            .clickable { playAudio(mediaPlayer, uri, context) },
-                        contentAlignment = Alignment.Center
+                        modifier = Modifier
+                            .size(60.dp)
+                            .combinedClickable(
+                                onClick = { playAudio(mediaPlayer, uri, context) },
+                                onLongClick = {
+                                    val updatedList = audioUris.toMutableList()
+                                    updatedList.remove(uri)
+                                    audioUris = updatedList as SnapshotStateList<Uri>
+                                }
+                            )
                     ) {
                         Icon(
                             painter = painterResource(id = R.drawable.ic_audio),
-                            contentDescription = "Audio seleccionado"
+                            contentDescription = "Audio seleccionado",
+                            modifier = Modifier.align(Alignment.Center)
                         )
                     }
                 }
@@ -1820,17 +2188,14 @@ class MainActivity : ComponentActivity() {
                 Button(
                     onClick = {
                         task?.let {
-                            val formatter =
-                                SimpleDateFormat("dd/MM/yyyy HH:mm", Locale.getDefault())
-                            val date = formatter.parse(dueDate)
-                            val dueDateLong = date?.time ?: it.dueDate
+
 
                             viewModel.updateTask(
                                 Task(
                                     id = it.id,
                                     title = title.text,
                                     description = description.text,
-                                    dueDate = dueDateLong,
+                                    dueDate = dueDate ?: System.currentTimeMillis(),
                                     multimedia = imageUris.joinToString(",") { it.toString() } +
                                             "|" +
                                             videoUris.joinToString(",") { it.toString() } +
@@ -1838,6 +2203,26 @@ class MainActivity : ComponentActivity() {
                                             audioUris.joinToString(",") { it.toString() }
                                 )
                             )
+                            // Programar notificaciones para recordatorios
+                            reminders.forEach { reminder ->
+                                scheduleNotification(
+                                    context,
+                                    timeMillis = reminder.first,
+                                    message = "Recordatorio: ${reminder.second}",
+                                    taskTitle = title.text
+                                )
+                            }
+
+                            // También programa una notificación para la fecha final (opcional)
+                            dueDate?.let {
+                                scheduleNotification(
+                                    context,
+                                    timeMillis = it,
+                                    message = "¡La tarea '${title.text}' vence ahora!",
+                                    taskTitle = title.text
+                                )
+                            }
+
                         }
                         navController.navigate("tasksList")
                     },
@@ -1886,29 +2271,47 @@ class MainActivity : ComponentActivity() {
             MainScreen(navController)
         }
     }
-    private fun createNotificationChannel() {
+
+    //funcion para recordatorios
+    fun setReminder(context: Context, dueDate: Long, taskTitle: String) {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+
+        val intent = Intent(context, ReminderReceiver::class.java).apply {
+            putExtra("taskTitle", taskTitle)
+        }
+
+        // Generamos un PendingIntent único utilizando un ID aleatorio.
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            Random.nextInt(), // ID único para cada recordatorio
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+        )
+
+        // Programamos la alarma para la hora seleccionada.
+        alarmManager.setExact(
+            AlarmManager.RTC_WAKEUP,
+            dueDate,
+            pendingIntent
+        )
+    }
+
+
+    //Canal de notificacion
+    fun createNotificationChannel(context: Context) {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val name = "Agenda Notifications"
-            val descriptionText = "Canal para recordatorios de la agenda"
-            val importance = NotificationManager.IMPORTANCE_HIGH
-            val channel = NotificationChannel("agenda_channel", name, importance).apply {
-                description = descriptionText
+            val channel = NotificationChannel(
+                "task_reminder_channel",  // Este es el mismo nombre que usas en ReminderReceiver
+                "Recordatorios de Tareas",
+                NotificationManager.IMPORTANCE_HIGH
+            ).apply {
+                description = "Canal para notificaciones de recordatorios de tareas."
             }
 
-            val notificationManager: NotificationManager =
-                getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            val notificationManager =
+                context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
             notificationManager.createNotificationChannel(channel)
         }
-    }
-    fun scheduleAlarm(context: Context, title: String, description: String, timeInMillis: Long) {
-        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        val intent = Intent(context, AlarmReceiver::class.java).apply {
-            putExtra("title", title)
-            putExtra("description", description)
-        }
-        val pendingIntent = PendingIntent.getBroadcast(context, 0, intent, PendingIntent.FLAG_UPDATE_CURRENT)
-
-        alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, timeInMillis, pendingIntent)
     }
 
 }
